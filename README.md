@@ -1,23 +1,13 @@
 # Instagram MCP
 
-Local TypeScript MCP server for the official Instagram API: approved publishing, owned-comment management, and analytics for allowlisted Professional accounts.
+**v1 in progress (1.0.0-rc.1).** A self-hosted MCP server for Instagram built only on Meta's official Instagram Platform API.
 
-## Safety boundary
-
-No likes, saves, shares, follows/unfollows, follower identity access, Highlights, scraping, private APIs, or browser automation are implemented. Every write requires `confirm: true`; publishing also requires `publish_intent: "public"` and an idempotency key.
-
-## Configure
+The v1 design is in `docs/superpowers/specs/2026-10-29-instagram-mcp-v1-design.md` and the behaviour contract in `docs/CONTRACT.md`. This branch currently ships the foundation (config, secrets, auth, Graph client, storage, approval ledger, transports, CLI) and the account/ops tools; the remaining tool domains are being added.
 
 ```sh
-cp .env.example .env
-# Export the values through your preferred secret manager; do not commit .env.
-npm run build
+npm ci && npm run build
+node dist/cli.js doctor
+node dist/cli.js serve          # stdio MCP server
 ```
 
-Set `INSTAGRAM_ACCOUNT_IDS` and `INSTAGRAM_ACCESS_TOKEN`. The token is never exposed through an MCP tool or included in error messages. Use `npm start` for the stdio server.
-
-## Tools
-
-`instagram_get_analytics`, `instagram_list_media`, `instagram_list_comments`, `instagram_get_publish_status`, `instagram_publish_post`, `instagram_reply_to_comment`, and `instagram_moderate_comment`.
-
-Publishing follows Meta's create-container, poll-status, publish sequence. The server retries transient reads only; it never automatically repeats writes after an uncertain outcome.
+Full README, setup guide and tool reference come with the docs unit.

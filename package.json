@@ -1,25 +1,25 @@
 {
   "name": "instagram-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.1",
+  "description": "Self-hosted MCP server for Instagram using only Meta's official Instagram Platform API",
   "private": true,
+  "license": "MIT",
   "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
+  "bin": { "instagram-mcp": "dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=22.13" },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "test": "tsx --test test/**/*.test.ts"
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "start": "node dist/cli.js serve"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "zod": "^3.24.2"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
-    "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   }
 }
