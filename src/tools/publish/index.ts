@@ -90,10 +90,23 @@ const preflightPublish = defineTool({
         source: m.source,
         url: m.url,
         path: m.path,
+        real_path: m.real_path ?? null,
         type: m.type,
         bytes: prepared.media[i]?.bytes ?? null,
+        sha256: m.sha256,
         content_type: prepared.media[i]?.content_type ?? null
       })),
+      cover: params.cover
+        ? {
+            source: params.cover.source,
+            url: params.cover.url,
+            path: params.cover.path,
+            real_path: params.cover.real_path ?? null,
+            bytes: params.cover.size,
+            sha256: params.cover.sha256,
+            content_type: params.cover.content_type ?? null
+          }
+        : null,
       scheduled: params.publish_at !== undefined,
       publish_at: params.publish_at ?? null,
       container_create_at: params.container_create_at ?? null,

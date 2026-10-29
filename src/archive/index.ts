@@ -1,3 +1,5 @@
+import type { IncomingMessage } from 'node:http';
+import { pinnedRequest } from '../net/ssrf.js';
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
@@ -132,23 +134,27 @@ const DOWNLOAD_FIELDS =
 interface Planned { name: string; url: URL; kind: DownloadedFile['kind']; fixedExt?: string }
 
 async function fetchToFile(url: URL, dir: string, base: string, fixedExt: string | undefined): Promise<{ name: string; bytes: number }> {
-  let res: Response;
+  let res: IncomingMessage;
   try {
-    // No credentials, no cookies, redirects are never followed.
-    res = await fetch(url, { method: 'GET', redirect: 'manual', headers: { accept: '*/*' }, signal: AbortSignal.timeout(120_000) });
+    // No credentials, no cookies, redirects are never followed; DNS is resolved once, validated and pinned (SSRF guard).
+    const testLoopback = process.env.INSTAGRAM_MCP_TEST_MODE === '1' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+    res = await pinnedRequest(url, { method: 'GET', headers: { accept: '*/*' }, timeoutMs: 120_000, skipValidation: testLoopback });
   } catch (cause) {
+    if (cause instanceof AppError) throw cause;
     throw new AppError('UPSTREAM_TRANSIENT', `Download failed: ${redact((cause as Error).message)}`, { retryable: true, cause });
   }
-  if (res.status < 200 || res.status > 299 || !res.body) {
-    try { await res.body?.cancel(); } catch { /* ignore */ }
-    throw new AppError('UPSTREAM_TRANSIENT', `Download failed with HTTP ${res.status}.`, { retryable: true, details: { http_status: res.status } });
+  const status = res.statusCode ?? 0;
+  if (status < 200 || status > 299) {
+    res.destroy();
+    throw new AppError('UPSTREAM_TRANSIENT', `Download failed with HTTP ${status}.`, { retryable: true, details: { http_status: status } });
   }
-  const name = `${base}.${fixedExt ?? deriveExt(res.headers.get('content-type'), url)}`;
+  const ctype = res.headers['content-type'];
+  const name = `${base}.${fixedExt ?? deriveExt(typeof ctype === 'string' ? ctype : null, url)}`;
   const target = join(dir, name);
   assertInside(dir, target);
   const tmp = `${target}.${process.pid}.part`;
   try {
-    await pipeline(Readable.fromWeb(res.body as never), createWriteStream(tmp, { mode: 0o600 }));
+    await pipeline(res, createWriteStream(tmp, { mode: 0o600 }));
     chmodSync(tmp, 0o600);
     renameSync(tmp, target);
   } catch (cause) {

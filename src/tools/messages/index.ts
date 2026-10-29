@@ -8,6 +8,7 @@ import { createApproval, type PlannedCall } from '../../safety/approvals.js';
 import { registerAction } from '../../safety/registry.js';
 import { DAY_MS, dmBase, gatePreflight, idParam, isRecord, ownId, str, tsMs, withTarget } from '../../engagement/common.js';
 import { assertRemoteMediaUrl } from '../../engagement/url.js';
+import { verifyRemoteMedia } from '../../publish/validate.js';
 import { accountParam, cursorParam } from '../shared.js';
 import { defineTool, ok, READ_ONLY, type ToolDef } from '../types.js';
 
@@ -183,7 +184,7 @@ const preflightSendMessage = defineTool({
     if (input.reply_to_mid && input.reaction) bad('reply_to_mid is only allowed with text or media', 'reply_to_mid');
     const account = ctx.account(input.account);
     await gatePreflight(ctx, account, 'send_message');
-    if (input.media) await assertRemoteMediaUrl(input.media.url, 'media.url', process.env.INSTAGRAM_MCP_TEST_MODE === '1');
+    if (input.media) await assertRemoteMediaUrl(input.media.url, 'media.url', process.env.INSTAGRAM_MCP_TEST_MODE === '1', verifyRemoteMedia(ctx));
 
     const warnings: string[] = [];
     let quick = input.quick_replies;
@@ -228,11 +229,18 @@ const preflightSendMessage = defineTool({
       ...(input.reply_to_mid ? { reply_to_mid: input.reply_to_mid } : {}),
       human_tag: humanTag
     };
+    if (input.media && !verifyRemoteMedia(ctx)) warnings.push('MEDIA_UNVERIFIED: the media URL was not checked locally (policy.verify_remote_media is off); Instagram will fetch it when the message is sent.');
     const base = await dmBase(account, graph);
     const planned: PlannedCall[] = [{ method: 'POST', path: `/${base}/messages`, params: sendBody(params) }];
     const preview = {
       recipient_id: params.recipient_id, conversation_id: params.conversation_id, kind: params.kind,
-      text: params.text ?? null, window: { open, last_user_message_at: state.lastUserAt, human_agent: humanTag }
+      text: params.text ?? null,
+      media: params.media ? { url: params.media.url, type: params.media.type } : null,
+      quick_replies: params.quick_replies ? params.quick_replies.map((q) => ({ title: q.title, payload: q.payload })) : null,
+      reply_to_mid: params.reply_to_mid ?? null,
+      reaction: params.reaction ? { message_id: params.reaction.message_id, action: params.reaction.action, emoji: params.reaction.action === 'react' ? params.reaction.emoji : null } : null,
+      tag: humanTag ? 'HUMAN_AGENT' : null,
+      window: { open, last_user_message_at: state.lastUserAt, human_agent: humanTag }
     };
     const ticket = await createApproval(ctx, {
       account: account.alias, action: 'send_message', target: params.recipient_id, params, preview, planned_calls: planned, warnings, state_fingerprint: 'n/a'

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { AppContext } from '../context.js';
 import { AppError, isAppError } from '../errors.js';
-import { deleteStagedByOwner, refreshStagedExpiry, stageFile } from '../media-host/index.js';
+import { cleanupStaging, deleteStagedByOwner, refreshStagedExpiry, stageFile } from '../media-host/index.js';
 import { errorMessage, redactDeep } from '../redact.js';
 import { makeActionContext, newOperationId, type ErrorObject } from '../safety/index.js';
 import { ensureContainers, isPollTimeout, publishContainer, resolveStaged, emptyState, type Runtime } from './execute.js';
@@ -26,6 +26,11 @@ export interface JobRow {
   media_id: string | null;
   permalink: string | null;
   error: ErrorObject | null;
+  /** Per-job claim (CAS in scheduled_posts.data); wall-clock expiry. */
+  claim_owner: string | null;
+  claim_expires: string | null;
+  /** Set right before media_publish is called; a job with this set is never published again. */
+  publish_attempted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +39,7 @@ export interface JobRow {
 
 function toJob(r: Record<string, unknown>): JobRow {
   const payload = JSON.parse(r.payload_json as string) as { params: PublishParams; staged: StagedTokens };
-  const data = r.data ? (JSON.parse(r.data as string) as { error?: ErrorObject }) : {};
+  const data = r.data ? (JSON.parse(r.data as string) as { error?: ErrorObject; claim_owner?: string; claim_expires?: string; publish_attempted_at?: string }) : {};
   return {
     id: r.id as string,
     account: r.account as string,
@@ -51,6 +56,9 @@ function toJob(r: Record<string, unknown>): JobRow {
     media_id: (r.media_id as string | null) ?? null,
     permalink: (r.permalink as string | null) ?? null,
     error: data.error ?? null,
+    claim_owner: data.claim_owner ?? null,
+    claim_expires: data.claim_expires ?? null,
+    publish_attempted_at: data.publish_attempted_at ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string
   };
@@ -98,11 +106,48 @@ export function updateJob(ctx: AppContext, id: string, patch: JobPatch): void {
   if (patch.media_id !== undefined) { sets.push('media_id = ?'); args.push(patch.media_id); }
   if (patch.permalink !== undefined) { sets.push('permalink = ?'); args.push(patch.permalink); }
   if (patch.error !== undefined) {
-    sets.push('error_code = ?', 'error_message = ?', 'data = ?');
+    sets.push('error_code = ?', 'error_message = ?', "data = json_patch(coalesce(data,'{}'), ?)");
     args.push(patch.error?.code ?? null, patch.error?.message ?? null, JSON.stringify({ error: patch.error ? redactDeep(patch.error) : null }));
   }
   if (patch.attempts) sets.push('attempts = attempts + 1');
   ctx.storage.db.prepare(`UPDATE scheduled_posts SET ${sets.join(', ')} WHERE id = ?`).run(...args, id);
+}
+
+/** Merge-patch the job's `data` JSON (null deletes a key). */
+function patchData(ctx: AppContext, id: string, patch: Record<string, unknown>): void {
+  ctx.storage.db.prepare("UPDATE scheduled_posts SET data = json_patch(coalesce(data,'{}'), ?) WHERE id = ?").run(JSON.stringify(patch), id);
+}
+
+// Claims use REAL wall time (like the daemon lease) so a frozen test clock cannot keep a dead claim alive.
+const CLAIM_TTL_MS = 120_000;
+const CLAIM_RENEW_MS = 20_000;
+const wall = (ms = 0): string => new Date(Date.now() + ms).toISOString();
+
+/** Compare-and-set claim: true only for the single caller that wins. */
+export function claimJob(ctx: AppContext, id: string, owner: string): boolean {
+  const r = ctx.storage.db
+    .prepare(
+      `UPDATE scheduled_posts SET data = json_patch(coalesce(data,'{}'), ?)
+       WHERE id = ? AND status IN ('scheduled','containers_created')
+         AND (json_extract(coalesce(data,'{}'), '$.claim_owner') IS NULL OR json_extract(coalesce(data,'{}'), '$.claim_expires') <= ?)`
+    )
+    .run(JSON.stringify({ claim_owner: owner, claim_expires: wall(CLAIM_TTL_MS) }), id, wall());
+  return Number(r.changes) > 0;
+}
+
+function renewClaim(ctx: AppContext, id: string, owner: string): boolean {
+  const r = ctx.storage.db
+    .prepare("UPDATE scheduled_posts SET data = json_patch(coalesce(data,'{}'), ?) WHERE id = ? AND json_extract(coalesce(data,'{}'), '$.claim_owner') = ?")
+    .run(JSON.stringify({ claim_expires: wall(CLAIM_TTL_MS) }), id, owner);
+  return Number(r.changes) > 0;
+}
+
+function releaseClaim(ctx: AppContext, id: string, owner: string): void {
+  try {
+    ctx.storage.db
+      .prepare("UPDATE scheduled_posts SET data = json_patch(coalesce(data,'{}'), ?) WHERE id = ? AND json_extract(coalesce(data,'{}'), '$.claim_owner') = ?")
+      .run(JSON.stringify({ claim_owner: null, claim_expires: null }), id, owner);
+  } catch { /* db closed */ }
 }
 
 export const newJobId = (): string => `sched_${randomBytes(16).toString('base64url')}`;
@@ -113,6 +158,7 @@ export const newJobId = (): string => `sched_${randomBytes(16).toString('base64u
 export async function createScheduledJob(
   ctx: AppContext, accountAlias: string, approvalId: string, p: PublishParams
 ): Promise<{ scheduled: true; job_id: string; publish_at: string; container_create_at: string }> {
+  try { cleanupStaging(ctx); } catch { /* opportunistic */ }
   const jobId = newJobId();
   const graceMs = ctx.config.scheduler.missed_grace_minutes * 60_000;
   const expiresAt = new Date(Date.parse(p.publish_at!) + graceMs + 24 * 3_600_000).toISOString();
@@ -120,12 +166,12 @@ export async function createScheduledJob(
   try {
     for (const m of p.media) {
       if (m.source === 'local') {
-        const s = await stageFile(ctx, { sourcePath: m.path!, contentType: m.content_type ?? 'application/octet-stream', account: accountAlias, ownerId: jobId, expiresAt, expectedSha256: m.sha256 ?? undefined });
+        const s = await stageFile(ctx, { sourcePath: m.real_path ?? m.path!, contentType: m.content_type ?? 'application/octet-stream', account: accountAlias, ownerId: jobId, expiresAt, expectedSha256: m.sha256 ?? undefined });
         staged.media.push(s.token);
       } else staged.media.push(null);
     }
     if (p.cover?.source === 'local') {
-      staged.cover = (await stageFile(ctx, { sourcePath: p.cover.path!, contentType: 'image/jpeg', account: accountAlias, ownerId: jobId, expiresAt, expectedSha256: p.cover.sha256 ?? undefined })).token;
+      staged.cover = (await stageFile(ctx, { sourcePath: p.cover.real_path ?? p.cover.path!, contentType: 'image/jpeg', account: accountAlias, ownerId: jobId, expiresAt, expectedSha256: p.cover.sha256 ?? undefined })).token;
     }
   } catch (error) {
     deleteStagedByOwner(ctx, jobId);
@@ -176,6 +222,52 @@ function finishOperation(ctx: AppContext, job: JobRow, opId: string, status: 'su
   });
 }
 
+async function reconcileAttempted(ctx: AppContext, job: JobRow, row: (s: JobStatus, a: SchedulerJobResult['action'], e?: ErrorObject | null) => SchedulerJobResult): Promise<SchedulerJobResult> {
+  const creationId = job.state.parent ?? job.creation_id;
+  const opId = job.operation_id ?? (() => {
+    const id = newOperationId();
+    ctx.storage.operations.create({ operation_id: id, approval_id: job.approval_id, account: job.account, action: 'publish', target: null, origin: 'scheduler', now: ctx.clock.nowIso() });
+    updateJob(ctx, job.id, { operation_id: id });
+    return id;
+  })();
+  let status: string | null = null;
+  if (creationId) {
+    try {
+      const graph = ctx.graph(ctx.account(job.account));
+      status = (await graph.get<{ status_code?: string }>(`/${creationId}`, { fields: 'status_code' })).status_code ?? null;
+    } catch {
+      return row(job.status, 'skipped'); // cannot tell right now; try again next pass, never re-publish
+    }
+  }
+  if (status === 'PUBLISHED') {
+    let mediaId: string | null = null;
+    let permalink: string | null = null;
+    try {
+      const graph = ctx.graph(ctx.account(job.account));
+      const ig = await graph.igUserId();
+      const recent = await graph.get<{ data?: Array<{ id?: string; permalink?: string; timestamp?: string }> }>(`/${ig}/media`, { fields: 'id,permalink,timestamp', limit: 1 });
+      const item = recent.data?.[0];
+      if (item?.timestamp !== undefined && Date.parse(item.timestamp) >= Date.parse(job.publish_attempted_at!) - 120_000) {
+        mediaId = item.id ?? null;
+        permalink = item.permalink ?? null;
+      }
+    } catch { /* best effort */ }
+    updateJob(ctx, job.id, { status: 'published', media_id: mediaId, permalink });
+    finishOperation(ctx, job, opId, 'succeeded', { creation_id: creationId, media_id: mediaId, permalink, reconciled: true }, null);
+    deleteStagedByOwner(ctx, job.id);
+    return row('published', 'published');
+  }
+  const reconcile = { ...(ctx.storage.operations.get(opId)?.reconcile ?? {}), ...(creationId ? { creation_id: creationId } : {}), operation_id: opId };
+  ctx.storage.operations.setReconcile(opId, reconcile, ctx.clock.nowIso());
+  const obj = errorObject(new AppError('OUTCOME_UNKNOWN', 'A previous media_publish attempt for this job has no recorded result; the scheduler will not publish it again.', {
+    details: { reconcile, container_status: status },
+    action: `Call instagram_get_operation with id ${opId} to reconcile; the scheduler never retries this publish.`
+  }));
+  updateJob(ctx, job.id, { status: 'unknown', error: obj });
+  finishOperation(ctx, job, opId, 'unknown', { error: obj }, 'OUTCOME_UNKNOWN');
+  return row('unknown', 'unknown', obj);
+}
+
 async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobResult> {
   const before = job.status;
   const row = (status_after: JobStatus, action: SchedulerJobResult['action'], error?: ErrorObject | null): SchedulerJobResult => ({
@@ -183,6 +275,8 @@ async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobRes
     operation_id: getJob(ctx, job.id)?.operation_id ?? job.operation_id,
     error: error ? { code: error.code, message: error.message } : null
   });
+
+  if (job.publish_attempted_at) return reconcileAttempted(ctx, job, row);
 
   const now = ctx.clock.nowMs();
   const publishAt = Date.parse(job.publish_at);
@@ -238,6 +332,8 @@ async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobRes
     updateJob(ctx, job.id, { status: 'containers_created', state });
     if (now < publishAt) return row('containers_created', 'containers_created');
 
+    // Persist the attempt BEFORE the risky call: a crash after this point is reconciled, never re-published.
+    patchData(ctx, job.id, { publish_attempted_at: wall() });
     const result = await publishContainer(rt, job.params, state, hooks);
     updateJob(ctx, job.id, { status: 'published', media_id: result.media_id, permalink: result.permalink });
     finishOperation(ctx, job, operationId, 'succeeded', result, null);
@@ -261,6 +357,7 @@ async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobRes
     const obj = errorObject(err);
     updateJob(ctx, job.id, { status: 'failed', error: obj });
     finishOperation(ctx, job, operationId, 'failed', { error: obj }, obj.code);
+    deleteStagedByOwner(ctx, job.id);
     return row('failed', 'failed', obj);
   }
 }
@@ -278,8 +375,23 @@ export async function runSchedulerOnce(ctx: AppContext): Promise<{ now: string; 
       .all()
       .map((r) => toJob(r as Record<string, unknown>));
     const jobs: SchedulerJobResult[] = [];
-    for (const job of due) {
+    const owner = `${process.pid}:${randomBytes(8).toString('hex')}`;
+    for (const listed of due) {
+      const skip = (): SchedulerJobResult => ({
+        job_id: listed.id, account: listed.account, status_before: listed.status, status_after: listed.status, action: 'skipped', operation_id: listed.operation_id, error: null
+      });
+      if (!claimJob(ctx, listed.id, owner)) {
+        jobs.push(skip());
+        continue;
+      }
+      const timer = setInterval(() => { renewClaim(ctx, listed.id, owner); }, CLAIM_RENEW_MS);
+      timer.unref();
+      const job = getJob(ctx, listed.id) ?? listed;
       try {
+        if (job.status !== 'scheduled' && job.status !== 'containers_created') {
+          jobs.push(skip());
+          continue;
+        }
         jobs.push(await processJob(ctx, job));
       } catch (error) {
         ctx.log.error(`scheduler: job ${job.id} crashed: ${errorMessage(error)}`);
@@ -287,6 +399,9 @@ export async function runSchedulerOnce(ctx: AppContext): Promise<{ now: string; 
           job_id: job.id, account: job.account, status_before: job.status, status_after: job.status, action: 'skipped', operation_id: job.operation_id,
           error: { code: 'INTERNAL', message: errorMessage(error) }
         });
+      } finally {
+        clearInterval(timer);
+        releaseClaim(ctx, listed.id, owner);
       }
     }
     return { now, jobs };

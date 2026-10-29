@@ -5,7 +5,7 @@ import type { GraphClient } from '../graph/client.js';
 import { withProbe } from '../graph/capabilities.js';
 import { createRuploadClient } from '../graph/rupload.js';
 import {
-  deleteStaged, ensureMediaHost, getStagedPath, publicUrl, stageFile, stagedExpiry
+  cleanupStaging, deleteStaged, ensureMediaHost, getStagedPath, publicUrl, stageFile, stagedExpiry
 } from '../media-host/index.js';
 import { containerBody, mediaRoute, usesBranding, type UrlResolver } from './plan.js';
 import type { ContainerState, PublishParams, StagedTokens } from './types.js';
@@ -69,10 +69,13 @@ export async function stageForPublish(rt: Runtime, p: PublishParams, ownerId: st
       files.push(null);
       if (route === 'url') urls.push(m.url);
       else if (route === 'resumable') {
+        // Upload from a staged copy whose hash matched the approval, never from the original path (TOCTOU).
+        const s = await stageFile(ctx, { sourcePath: m.real_path ?? m.path!, contentType: m.content_type ?? 'application/octet-stream', account: account.alias, ownerId, expiresAt, expectedSha256: m.sha256 ?? undefined });
+        tokens.push(s.token);
         urls.push(null);
-        files[files.length - 1] = { path: m.path!, size: m.size ?? 0 };
+        files[files.length - 1] = { path: s.path, size: s.size };
       } else {
-        const s = await stageFile(ctx, { sourcePath: m.path!, contentType: m.content_type ?? 'application/octet-stream', account: account.alias, ownerId, expiresAt, expectedSha256: m.sha256 ?? undefined });
+        const s = await stageFile(ctx, { sourcePath: m.real_path ?? m.path!, contentType: m.content_type ?? 'application/octet-stream', account: account.alias, ownerId, expiresAt, expectedSha256: m.sha256 ?? undefined });
         tokens.push(s.token);
         urls.push(s.token);
       }
@@ -81,7 +84,7 @@ export async function stageForPublish(rt: Runtime, p: PublishParams, ownerId: st
     if (p.cover) {
       if (p.cover.source === 'url') cover = p.cover.url ?? undefined;
       else {
-        const s = await stageFile(ctx, { sourcePath: p.cover.path!, contentType: 'image/jpeg', account: account.alias, ownerId, expiresAt, expectedSha256: p.cover.sha256 ?? undefined });
+        const s = await stageFile(ctx, { sourcePath: p.cover.real_path ?? p.cover.path!, contentType: 'image/jpeg', account: account.alias, ownerId, expiresAt, expectedSha256: p.cover.sha256 ?? undefined });
         tokens.push(s.token);
         cover = s.token;
       }
@@ -270,12 +273,18 @@ export async function publishContainer(rt: Runtime, p: PublishParams, state: Con
 
 /** Immediate publish: stage, create + poll containers, publish, read permalink, clean up staged files. */
 export async function publishNow(rt: Runtime, p: PublishParams, ownerId: string, hooks: Hooks): Promise<PublishResult> {
+  try { cleanupStaging(rt.ctx); } catch { /* opportunistic */ }
   const { resolved, tokens } = await stageForPublish(rt, p, ownerId);
   const state = emptyState();
-  const result = await (async () => {
+  let unknown = false;
+  try {
     await ensureContainers(rt, p, resolved, state, hooks);
-    return publishContainer(rt, p, state, hooks);
-  })();
-  deleteStaged(rt.ctx, tokens);
-  return result;
+    return await publishContainer(rt, p, state, hooks);
+  } catch (error) {
+    unknown = isAppError(error) && (error.code === 'OUTCOME_UNKNOWN' || (error.code === 'UPSTREAM_TRANSIENT' && error.details?.ambiguous === true));
+    throw error;
+  } finally {
+    // Any terminal outcome removes the public staged copies; only an unknown outcome keeps them until expiry.
+    if (!unknown) deleteStaged(rt.ctx, tokens);
+  }
 }

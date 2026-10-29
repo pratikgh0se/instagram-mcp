@@ -5,7 +5,9 @@ import { requireCapability } from '../graph/capabilities.js';
 import { errorMessage, redactDeep } from '../redact.js';
 import type { ApprovalRow, OperationRow } from '../storage/index.js';
 import { bindingHash, makeActionContext, type PlannedCall } from './approvals.js';
+import { currentElicitor } from './elicit.js';
 import { assertPolicyAllows } from './policy.js';
+import { summarizeApproval } from './summary.js';
 import { getAction } from './registry.js';
 
 export interface ErrorObject {
@@ -94,6 +96,25 @@ export async function approveApproval(ctx: AppContext, approvalId: string): Prom
   }
 
   const dryRun = ctx.config.policy.dry_run;
+
+  // Human confirmation (MCP elicitation) when the client supports it. Decline/cancel leaves the approval pending.
+  const elicitor = currentElicitor();
+  if (!dryRun && elicitor && ((ctx.config.policy as { confirm_via_elicitation?: boolean }).confirm_via_elicitation ?? true)) {
+    const message = `${summarizeApproval({ action: row.action, account: row.account, target: row.target, preview: row.preview })}\n\nApprove and execute this action?`;
+    let decision: 'accept' | 'decline' | 'cancel' = 'decline';
+    let failed = false;
+    try {
+      decision = await elicitor.ask(message);
+    } catch {
+      failed = true;
+    }
+    if (decision !== 'accept') {
+      throw new AppError('POLICY_DENIED', failed ? 'The confirmation request to the user failed; nothing was executed.' : 'The user declined the confirmation; nothing was executed.', {
+        action: 'Ask the user to confirm, then call instagram_approve again (the approval stays pending until it expires).',
+        details: { reason: failed ? 'elicitation_failed' : 'declined_by_user' }
+      });
+    }
+  }
 
   // Stale check first (read-only): a vanished/changed target never consumes the approval's write step.
   if (!dryRun && spec.recheck) {

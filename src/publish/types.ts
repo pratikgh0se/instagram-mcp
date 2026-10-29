@@ -11,6 +11,8 @@ export interface MediaParam {
   source: 'url' | 'local';
   url: string | null;
   path: string | null;
+  /** Local files: realpath at preflight (inside local_media_dirs). */
+  real_path?: string | null;
   type: MediaType;
   alt_text?: string;
   user_tags?: UserTag[];
@@ -24,8 +26,10 @@ export interface CoverParam {
   source: 'url' | 'local';
   url: string | null;
   path: string | null;
+  real_path?: string | null;
   size: number | null;
   sha256: string | null;
+  content_type?: string | null;
 }
 
 /** The approved publish payload stored in the approval (and copied into a scheduled job). */

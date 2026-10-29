@@ -1,5 +1,6 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, rmSync, statSync } from 'node:fs';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { chmodSync, createReadStream, createWriteStream, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { openNoFollow } from '../publish/localmedia.js';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -53,7 +54,7 @@ export async function stageFile(ctx: AppContext, input: StageInput): Promise<Sta
   const hash = createHash('sha256');
   let size = 0;
   try {
-    const src = createReadStream(input.sourcePath);
+    const src = openNoFollow(input.sourcePath);
     src.on('data', (chunk: string | Buffer) => {
       const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
       hash.update(buf);
@@ -182,21 +183,45 @@ function plain(res: ServerResponse, status: number, headers: Record<string, stri
   res.end();
 }
 
-/** Header carrying a hash of the staging dir path: lets a second instance sharing INSTAGRAM_MCP_HOME recognise the port owner. */
-export const HOST_MARKER_HEADER = 'x-instagram-mcp-media-host';
+/**
+ * Port-owner probe (challenge-response). The owner keeps a random 32-byte secret in `<home>/media-host.key` (0600, created on
+ * first use). A prober sends `GET /m/__health?nonce=<random>`; only that request is answered with
+ * `x-instagram-mcp-media-host-proof: HMAC-SHA256(secret, nonce)` (hex). No other response carries any marker.
+ */
+export const HOST_PROOF_HEADER = 'x-instagram-mcp-media-host-proof';
 
-export function hostMarker(ctx: AppContext): string {
-  return createHash('sha256').update(ctx.paths.stagingDir).digest('hex').slice(0, 16);
+function hostSecret(ctx: AppContext): Buffer {
+  const file = join(ctx.paths.home, 'media-host.key');
+  try {
+    const existing = readFileSync(file);
+    if (existing.length === 32) return existing;
+  } catch { /* create below */ }
+  const secret = randomBytes(32);
+  try {
+    writeFileSync(file, secret, { mode: 0o600, flag: 'wx' });
+  } catch {
+    // Lost a creation race (or it exists but is malformed): use whatever is on disk now.
+    const again = readFileSync(file);
+    if (again.length === 32) return again;
+    writeFileSync(file, secret, { mode: 0o600 });
+  }
+  chmodSync(file, 0o600);
+  return secret;
 }
 
-/** True when 127.0.0.1:port is answered by an instagram-mcp media host using the same staging dir. */
+const hostProof = (ctx: AppContext, nonce: string): string => createHmac('sha256', hostSecret(ctx)).update(nonce).digest('hex');
+
+/** True when 127.0.0.1:port proves, by HMAC of a fresh nonce, that it holds this home's media-host secret. */
 function probeSameHost(ctx: AppContext): Promise<boolean> {
   return new Promise((resolve) => {
+    const nonce = randomBytes(16).toString('hex');
+    const expected = Buffer.from(hostProof(ctx, nonce));
     const req = httpRequest(
-      { host: '127.0.0.1', port: ctx.config.media_host.port, path: '/m/__health', method: 'GET', timeout: 2000 },
+      { host: '127.0.0.1', port: ctx.config.media_host.port, path: `/m/__health?nonce=${nonce}`, method: 'GET', timeout: 2000 },
       (res) => {
         res.resume();
-        resolve(res.headers[HOST_MARKER_HEADER] === hostMarker(ctx));
+        const got = res.headers[HOST_PROOF_HEADER];
+        resolve(typeof got === 'string' && got.length === expected.length && timingSafeEqual(Buffer.from(got), expected));
       }
     );
     req.on('timeout', () => req.destroy());
@@ -207,9 +232,13 @@ function probeSameHost(ctx: AppContext): Promise<boolean> {
 
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const ctx = host!.ctx;
-  res.setHeader(HOST_MARKER_HEADER, hostMarker(ctx));
   try {
     const rawPath = (req.url ?? '').split('?')[0] ?? '';
+    if (rawPath === '/m/__health') {
+      const nonce = new URL(req.url ?? '', 'http://x').searchParams.get('nonce') ?? '';
+      if (/^[0-9a-f]{32}$/.test(nonce)) return plain(res, 204, { [HOST_PROOF_HEADER]: hostProof(ctx, nonce) });
+      return plain(res, 404);
+    }
     const match = PATH_RE.exec(rawPath);
     if (!match) return plain(res, 404);
     const method = req.method ?? 'GET';
@@ -253,6 +282,7 @@ export async function ensureMediaHost(ctx: AppContext): Promise<void> {
     throw mediaHostUnavailable('A local file needs the media host, but media_host.public_base_url is not configured.');
   }
   starting ??= new Promise<void>((resolve, reject) => {
+    hostSecret(ctx); // create <home>/media-host.key (0600) on first use
     const server = createServer(handle);
     server.once('error', (error: NodeJS.ErrnoException) => {
       starting = undefined;
