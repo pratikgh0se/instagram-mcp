@@ -1,18 +1,47 @@
 {
   "name": "instagram-mcp",
   "version": "1.0.0-rc.1",
-  "description": "Self-hosted MCP server for Instagram using only Meta's official Instagram Platform API",
-  "private": true,
+  "description": "Self-hosted MCP server that lets an AI agent run an Instagram creator content cycle using only Meta's official Instagram Platform API",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "instagram",
+    "instagram-api",
+    "creator",
+    "social-media",
+    "insights",
+    "publishing",
+    "claude"
+  ],
+  "author": "Pratik Ghose",
   "license": "MIT",
+  "homepage": "https://github.com/pratikgh0se/instagram-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratikgh0se/instagram-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pratikgh0se/instagram-mcp/issues"
+  },
+  "private": true,
   "type": "module",
-  "bin": { "instagram-mcp": "dist/cli.js" },
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=22.13" },
+  "bin": {
+    "instagram-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "smoke": "npm run build && node scripts/smoke.mjs",
-    "start": "node dist/cli.js serve"
+    "start": "node dist/cli.js serve",
+    "docs:tools": "node scripts/gen-tools-doc.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -21,5 +50,6 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "typescript": "^5.8.3"
-  }
+  },
+  "mcpName": "io.github.pratikgh0se/instagram-mcp"
 }

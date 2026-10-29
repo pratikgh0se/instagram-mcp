@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+docs
+examples
+coverage
+.worktrees
+worktrees
+*.log
+.DS_Store

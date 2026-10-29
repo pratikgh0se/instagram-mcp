@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.pratikgh0se/instagram-mcp",
+  "description": "Self-hosted MCP server for running an Instagram creator content cycle with Meta's official API only.",
+  "version": "1.0.0-rc.1",
+  "repository": {
+    "url": "https://github.com/pratikgh0se/instagram-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "instagram-mcp",
+      "version": "1.0.0-rc.1",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "INSTAGRAM_MCP_HOME",
+          "description": "State directory (config, SQLite state, downloads, staging). Defaults to ~/.instagram-mcp.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
