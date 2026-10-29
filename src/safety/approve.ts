@@ -36,7 +36,7 @@ function itemsStatus(items: unknown[]): 'succeeded' | 'failed' | 'unknown' {
   if (items.length === 0) return 'succeeded';
   const statuses = items.map((i) => String((i as { status?: unknown })?.status ?? 'succeeded'));
   if (statuses.includes('unknown')) return 'unknown';
-  if (statuses.every((s) => s === 'failed')) return 'failed';
+  if (statuses.includes('failed')) return 'failed';
   return 'succeeded';
 }
 
@@ -48,13 +48,16 @@ function resultFromStored(row: ApprovalRow, replayed: boolean): ApproveResult {
     status: row.status as ApproveResult['status']
   };
   if (row.status === 'dry_run') base.planned_calls = (out.planned_calls as PlannedCall[]) ?? (row.planned_calls as PlannedCall[]);
-  else if (out.error) base.error = out.error as ErrorObject;
-  else {
+  else if (out.error) {
+    base.error = out.error as ErrorObject;
+    const { items, error: _error, ...rest } = out;
+    if (Array.isArray(items)) base.items = items;
+    if (Object.keys(rest).length > 0) base.result = rest;
+  } else {
     const { items, ...rest } = out;
     if (Array.isArray(items)) base.items = items;
     if (Object.keys(rest).length > 0 || !Array.isArray(items)) base.result = rest;
   }
-  if (Array.isArray(out.items) && row.status !== 'dry_run' && out.error) base.items = out.items as unknown[];
   if (replayed) base.replayed = true;
   return base;
 }
@@ -138,10 +141,15 @@ export async function approveApproval(ctx: AppContext, approvalId: string): Prom
     if (status === 'succeeded') {
       finalize(ctx, row, operationId, 'succeeded', raw, null);
     } else {
-      const error = new AppError(status === 'unknown' ? 'OUTCOME_UNKNOWN' : 'UPSTREAM_REJECTED', status === 'unknown' ? 'Some items have an unknown outcome.' : 'Every item failed.', {
-        details: status === 'unknown' ? { reconcile: { operation_id: operationId } } : undefined,
-        action: status === 'unknown' ? `Call instagram_get_operation with id ${operationId}.` : undefined
-      });
+      // Batch rule (contract D12): top-level error is the first item error of the deciding status.
+      const first = (items ?? []).find((i) => (i as { status?: string }).status === status) as { error?: ErrorObject } | undefined;
+      const fe = first?.error;
+      const error = fe
+        ? new AppError(fe.code, fe.message, { action: fe.action, retryable: fe.retryable, details: fe.details })
+        : new AppError(status === 'unknown' ? 'OUTCOME_UNKNOWN' : 'UPSTREAM_REJECTED', status === 'unknown' ? 'Some items have an unknown outcome.' : 'Some items failed.', {
+            details: status === 'unknown' ? { reconcile: { operation_id: operationId } } : undefined,
+            action: status === 'unknown' ? `Call instagram_get_operation with id ${operationId}.` : undefined
+          });
       finalize(ctx, row, operationId, status, { ...(raw as object), error: error.toJSON() }, error.code);
     }
     return resultFromStored(store.approvals.get(approvalId)!, false);
