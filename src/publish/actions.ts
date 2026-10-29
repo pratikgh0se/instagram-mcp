@@ -1,28 +1,29 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, promises as fsp } from 'node:fs';
+import { promises as fsp } from 'node:fs';
 import type { AppContext } from '../context.js';
 import { AppError } from '../errors.js';
 import { withProbe } from '../graph/capabilities.js';
 import { cleanupStaging } from '../media-host/index.js';
 import { registerAction, registerJob, type ActionContext } from '../safety/index.js';
 import { publishNow, type Runtime } from './execute.js';
+import { openNoFollow, recheckLocalMedia } from './localmedia.js';
 import { createScheduledJob, getJobByOperation, runSchedulerOnce, updateJob } from './scheduler.js';
 import type { PublishParams } from './types.js';
 
 async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  for await (const chunk of openNoFollow(path)) hash.update(chunk as Buffer);
   return hash.digest('hex');
 }
 
-function localFiles(p: PublishParams): Array<{ path: string; size: number | null; sha256: string | null }> {
-  const files = p.media.filter((m) => m.source === 'local').map((m) => ({ path: m.path!, size: m.size, sha256: m.sha256 }));
-  if (p.cover?.source === 'local') files.push({ path: p.cover.path!, size: p.cover.size, sha256: p.cover.sha256 });
+function localFiles(p: PublishParams): Array<{ path: string; real: string; size: number | null; sha256: string | null }> {
+  const files = p.media.filter((m) => m.source === 'local').map((m) => ({ path: m.path!, real: m.real_path ?? m.path!, size: m.size, sha256: m.sha256 }));
+  if (p.cover?.source === 'local') files.push({ path: p.cover.path!, real: p.cover.real_path ?? p.cover.path!, size: p.cover.size, sha256: p.cover.sha256 });
   return files;
 }
 
 /** Fingerprint of the local files as they are now ("none" without local files). Missing file -> STALE_PREVIEW. */
-export async function localFingerprint(p: PublishParams, current = true): Promise<string> {
+export async function localFingerprint(p: PublishParams, current = true, ctx?: AppContext): Promise<string> {
   const files = localFiles(p);
   if (files.length === 0) return 'none';
   const parts: string[] = [];
@@ -32,10 +33,12 @@ export async function localFingerprint(p: PublishParams, current = true): Promis
       continue;
     }
     try {
-      const st = await fsp.stat(f.path);
-      parts.push(`${st.size}:${await sha256File(f.path)}`);
-    } catch {
-      throw new AppError('STALE_PREVIEW', `A local media file is missing or unreadable (${f.path}); nothing was sent.`, { action: 'Run instagram_preflight_publish again.' });
+      if (ctx) await recheckLocalMedia(ctx, f.path, f.real);
+      const st = await fsp.stat(f.real);
+      parts.push(`${st.size}:${await sha256File(f.real)}`);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'STALE_PREVIEW') throw error;
+      throw new AppError('STALE_PREVIEW', `A local media file is missing, unreadable, moved or no longer inside an allowed media directory (${f.path}); nothing was sent.`, { action: 'Run instagram_preflight_publish again.' });
     }
   }
   return `local:${parts.join(',')}`;
@@ -50,7 +53,7 @@ export function registerPublishActions(): void {
   registerAction<PublishParams>({
     name: 'publish',
     capability: 'publish_url_media',
-    recheck: (_actx, params) => localFingerprint(params),
+    recheck: (actx, params) => localFingerprint(params, true, actx),
     async execute(actx, params) {
       if (params.publish_at) return createScheduledJob(actx, actx.actionAccount.alias, actx.approval_id, params);
       const rt = await runtime(actx);

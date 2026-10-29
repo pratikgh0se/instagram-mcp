@@ -1,15 +1,14 @@
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
 import type { AppContext } from '../context.js';
 import type { ResolvedAccount } from '../config/index.js';
 import { AppError } from '../errors.js';
 import type { GraphClient } from '../graph/client.js';
 import { requireCapability } from '../graph/capabilities.js';
 import { parseTimestamp } from '../tools/shared.js';
+import { resolveLocalMedia } from './localmedia.js';
 import { mediaRoute, usesBranding } from './plan.js';
 import type { CoverParam, Kind, MediaParam, MediaType, PublishParams, UserTag } from './types.js';
 import {
-  assertPublicUrl, headRemote, inspectLocalFile, maxBytes, typeFromContentType, typeFromExtension
+  assertPublicUrl, headRemote, inspectLocalFile, maxBytes, typeFromContentType, typeFromExtension, verifyRemoteMedia
 } from './validate.js';
 
 /** Raw (schema-validated) input of instagram_preflight_publish. */
@@ -75,10 +74,6 @@ function checkKindType(kind: Kind, type: MediaType, index: number): void {
   if (kind === 'reel' && type !== 'video') throw invalid('kind "reel" needs a video.', [`media[${index}]`]);
 }
 
-function localPath(p: string): string {
-  return resolve(p.replace(/^~(?=$|\/)/, homedir()));
-}
-
 function checkUserTags(tags: UserTag[] | undefined, type: MediaType, kind: Kind, field: string): void {
   if (tags && type === 'image' && kind !== 'story' && tags.some((t) => t.x === undefined || t.y === undefined)) {
     throw invalid('Each user tag on an image needs both x and y.', [field]);
@@ -93,7 +88,7 @@ export interface PreparedPublish {
 
 /**
  * Normalise and validate a publish request. Throws INVALID_INPUT / MEDIA_HOST_UNAVAILABLE.
- * Network use: DNS (SSRF guard) and one HEAD per remote media/cover, in order.
+ * Network use: none by default. With policy.verify_remote_media: pinned DNS + one HEAD per remote media/cover, in order.
  */
 export async function preparePublish(ctx: AppContext, account: ResolvedAccount, input: PublishInput): Promise<PreparedPublish> {
   checkShape(input);
@@ -110,6 +105,7 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
     containerAt = new Date(Math.max(ctx.clock.nowMs(), when.getTime() - lead)).toISOString();
   }
 
+  const verify = verifyRemoteMedia(ctx);
   const warnings: string[] = [];
   const media: MediaParam[] = [];
   const pending: Array<{ index: number; type: MediaType | undefined }> = [];
@@ -120,18 +116,20 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
     const userTags = i === 0 && input.user_tags ? input.user_tags : m.user_tags;
     const base = { ...(m.alt_text !== undefined ? { alt_text: m.alt_text } : {}), ...(userTags ? { user_tags: userTags } : {}) };
     if (m.path) {
-      const path = localPath(m.path);
+      const loc = await resolveLocalMedia(ctx, m.path);
+      const path = loc.path;
       const type = m.type ?? typeFromExtension(path);
       if (!type) throw invalid(`Cannot tell whether media[${i}] is an image or a video; pass type.`, [`media[${i}].type`]);
       checkKindType(kind, type, i);
       checkUserTags(userTags, type, kind, `media[${i}].user_tags`);
-      const info = await inspectLocalFile(path, { kind, type });
+      const info = await inspectLocalFile(loc.real_path, { kind, type });
       warnings.push(...info.warnings);
-      media.push({ source: 'local', url: null, path, type, size: info.size, sha256: info.sha256, content_type: info.content_type, ...base });
+      media.push({ source: 'local', url: null, path, real_path: loc.real_path, type, size: info.size, sha256: info.sha256, content_type: info.content_type, ...base });
       pending.push({ index: i, type });
     } else {
       await assertPublicUrl(m.url!);
       const type = m.type ?? typeFromExtension(new URL(m.url!).pathname);
+      if (!type && !verify) throw invalid(`Cannot tell whether media[${i}] is an image or a video; pass type.`, [`media[${i}].type`]);
       if (type) {
         checkKindType(kind, type, i);
         checkUserTags(userTags, type, kind, `media[${i}].user_tags`);
@@ -144,12 +142,12 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
   let coverRemote: string | undefined;
   if (input.cover) {
     if (input.cover.path) {
-      const path = localPath(input.cover.path);
-      const info = await inspectLocalFile(path, { kind: 'cover', type: 'image' });
-      cover = { source: 'local', url: null, path, size: info.size, sha256: info.sha256 };
+      const loc = await resolveLocalMedia(ctx, input.cover.path);
+      const info = await inspectLocalFile(loc.real_path, { kind: 'cover', type: 'image' });
+      cover = { source: 'local', url: null, path: loc.path, real_path: loc.real_path, size: info.size, sha256: info.sha256, content_type: info.content_type };
     } else {
       await assertPublicUrl(input.cover.url!);
-      cover = { source: 'url', url: input.cover.url!, path: null, size: null, sha256: null };
+      cover = { source: 'url', url: input.cover.url!, path: null, real_path: null, size: null, sha256: null, content_type: null };
       coverRemote = input.cover.url;
     }
   }
@@ -187,6 +185,11 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
       facts.push({ bytes: m.size, content_type: m.content_type });
       continue;
     }
+    if (!verify) {
+      warnings.push(`MEDIA_UNVERIFIED: media[${index}] was not checked locally (policy.verify_remote_media is off); Instagram will fetch it at publish time.`);
+      facts.push({ bytes: null, content_type: null });
+      continue;
+    }
     const head = await headRemote(m.url!, { type, limit: maxBytes(kind, type ?? 'video'), label: `media[${index}]` });
     if (!head.verified) warnings.push(`MEDIA_UNVERIFIED: could not verify media[${index}] with HEAD; Instagram will fetch it at publish time.`);
     let resolvedType = type;
@@ -202,7 +205,9 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
     }
     facts.push({ bytes: head.content_length, content_type: head.content_type });
   }
-  if (coverRemote) {
+  if (coverRemote && !verify) {
+    warnings.push('MEDIA_UNVERIFIED: the cover image was not checked locally (policy.verify_remote_media is off); Instagram will fetch it at publish time.');
+  } else if (coverRemote) {
     const head = await headRemote(coverRemote, { type: 'image', limit: maxBytes('cover', 'image'), label: 'cover' });
     if (!head.verified) warnings.push('MEDIA_UNVERIFIED: could not verify the cover image with HEAD.');
   }

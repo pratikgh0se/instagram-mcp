@@ -5,7 +5,7 @@ import { createContext, type AppContext } from '../context.js';
 import { AppError } from '../errors.js';
 import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
-import { acquireLease } from '../daemon/lease.js';
+import { acquireLease, LEASE_RENEW_MS } from '../daemon/lease.js';
 import { listJobs } from '../safety/registry.js';
 import { resolveHttpHost, runHttp } from '../transports/http.js';
 import { runStdio } from '../transports/stdio.js';
@@ -269,7 +269,15 @@ export async function scheduler(argv: string[]): Promise<number> {
       json({ ok: true, now: ctx.clock.nowIso(), jobs: [] });
       return 0;
     }
-    const result = (await job.run(ctx)) as unknown;
+    // Renew the lease while working so a long container poll cannot let a daemon take over mid-job.
+    const renewTimer = setInterval(() => { lease.renew(); }, LEASE_RENEW_MS);
+    renewTimer.unref();
+    let result: unknown;
+    try {
+      result = (await job.run(ctx)) as unknown;
+    } finally {
+      clearInterval(renewTimer);
+    }
     const jobs = result && typeof result === 'object' && Array.isArray((result as { jobs?: unknown }).jobs) ? (result as { jobs: unknown[] }).jobs : [];
     json({ ok: true, now: ctx.clock.nowIso(), jobs });
     return 0;

@@ -2,9 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { AppContext } from '../context.js';
 import { AppError } from '../errors.js';
 import { requireCapability } from '../graph/capabilities.js';
-import { redactDeep } from '../redact.js';
+import { redactDeep, redactExactDeep } from '../redact.js';
 import { assertPolicyAllows, isDryRun } from './policy.js';
 import { getAction, type ActionContext } from './registry.js';
+import { summarizeApproval } from './summary.js';
 
 /** Deterministic JSON: object keys sorted recursively, undefined dropped. */
 export function canonicalJson(value: unknown): string {
@@ -61,6 +62,8 @@ export interface ApprovalTicket {
   preview: unknown;
   planned_calls: PlannedCall[];
   warnings: string[];
+  /** Server-written plain-language summary of the preview (also the elicitation message at approve). */
+  summary: string;
   dry_run: boolean;
 }
 
@@ -84,6 +87,8 @@ export async function createApproval(ctx: AppContext, input: CreateApprovalInput
   const now = ctx.clock.now();
   const ttl = input.ttl_seconds ?? ctx.config.policy.approval_ttl_seconds;
   const expiresAt = new Date(now.getTime() + ttl * 1000).toISOString();
+  // Binding hash covers exactly the stored params representation (exact registered secrets removed; nothing else changed).
+  const params = redactExactDeep(input.params);
   const preview = redactDeep(input.preview);
   const planned = redactDeep(input.planned_calls ?? []);
   const warnings = input.warnings ?? [];
@@ -93,8 +98,8 @@ export async function createApproval(ctx: AppContext, input: CreateApprovalInput
     account: account.alias,
     action: input.action,
     target: input.target ?? null,
-    params: input.params,
-    params_hash: bindingHash({ account: account.alias, action: input.action, target: input.target, params: input.params }),
+    params,
+    params_hash: bindingHash({ account: account.alias, action: input.action, target: input.target, params }),
     preview,
     planned_calls: planned,
     warnings,
@@ -111,6 +116,7 @@ export async function createApproval(ctx: AppContext, input: CreateApprovalInput
     preview,
     planned_calls: planned,
     warnings,
+    summary: summarizeApproval({ action: input.action, account: account.alias, target: input.target, preview }),
     dry_run: isDryRun(ctx)
   };
 }

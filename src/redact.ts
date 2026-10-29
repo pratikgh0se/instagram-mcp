@@ -40,14 +40,32 @@ const PATTERNS: Array<[RegExp, string]> = [
   [/("(?:access_token|client_secret|appsecret_proof)"\s*:\s*")[^"]*"/gi, '$1[REDACTED]"']
 ];
 
-export function redact(input: string): string {
+/** Replace only exact registered secret values (no generic patterns such as `Bearer xxx`). */
+export function redactExact(input: string): string {
   let out = input;
-  for (const [re, rep] of PATTERNS) out = out.replace(re, rep);
   // Longest first so a secret containing another is fully removed.
   for (const secret of [...live].sort((a, b) => b.length - a.length)) {
     if (out.includes(secret)) out = out.split(secret).join('[REDACTED]');
   }
   return out;
+}
+
+export function redact(input: string): string {
+  let out = input;
+  for (const [re, rep] of PATTERNS) out = out.replace(re, rep);
+  return redactExact(out);
+}
+
+/** Deep exact-secret redaction (used for stored approval params so ordinary text such as "Bearer abcdefghij" survives). */
+export function redactExactDeep<T>(value: T): T {
+  if (typeof value === 'string') return redactExact(value) as T;
+  if (Array.isArray(value)) return value.map((v) => redactExactDeep(v)) as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[redactExact(k)] = redactExactDeep(v);
+    return out as T;
+  }
+  return value;
 }
 
 /** Deep-redact every string in a JSON-like value. */

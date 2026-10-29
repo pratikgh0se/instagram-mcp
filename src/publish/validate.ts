@@ -1,10 +1,8 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, promises as fsp } from 'node:fs';
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { extname } from 'node:path';
 import { AppError } from '../errors.js';
-import { errorMessage } from '../redact.js';
+import { isBlockedAddress, isIpLiteral, pinnedRequest } from '../net/ssrf.js';
 import type { Kind, MediaType } from './types.js';
 
 const MB = 1024 * 1024;
@@ -139,7 +137,8 @@ export async function inspectLocalFile(path: string, check: LocalCheck): Promise
     if (!st.isFile()) throw new Error('not a regular file');
     await fsp.access(path, 0o4);
   } catch (error) {
-    throw invalid(`Local media file "${path}" does not exist or is not readable (${errorMessage(error)}).`, { path });
+    void error;
+    throw invalid('The local media file does not exist, is not a regular file, or is not readable.', { reason: 'file_not_found' });
   }
   const limit = maxBytes(check.kind, check.type);
   if (st.size > limit) {
@@ -192,24 +191,15 @@ function testMode(env: NodeJS.ProcessEnv): boolean {
   return env.INSTAGRAM_MCP_TEST_MODE === '1';
 }
 
-function isPrivateIp(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const [a, b] = ip.split('.').map(Number) as [number, number];
-    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-  }
-  if (v === 6) {
-    const x = ip.toLowerCase();
-    if (x === '::' || x === '::1') return true;
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(x);
-    if (mapped) return isPrivateIp(mapped[1]!);
-    const first = parseInt(x.split(':')[0] || '0', 16);
-    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
-  }
-  return false;
-}
+const isTestLoopback = (url: URL, env: NodeJS.ProcessEnv): boolean => {
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  return testMode(env) && url.protocol === 'http:' && (host === '127.0.0.1' || host === 'localhost') && Boolean(url.port);
+};
 
-/** Contract 1.11 remote URL rules (https only; no loopback/private targets; test mode allows loopback http). Throws INVALID_INPUT. */
+/**
+ * Contract 1.11 remote URL SYNTAX rules (https only; no credentials; IP literals in any form checked directly; no localhost-style
+ * names; test mode allows loopback http). No DNS lookup and no request is made here. Throws INVALID_INPUT.
+ */
 export async function assertPublicUrl(raw: string, env: NodeJS.ProcessEnv = process.env): Promise<URL> {
   let url: URL;
   try {
@@ -218,22 +208,23 @@ export async function assertPublicUrl(raw: string, env: NodeJS.ProcessEnv = proc
     throw invalid(`"${raw}" is not a valid URL.`);
   }
   const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (testMode(env) && url.protocol === 'http:' && (host === '127.0.0.1' || host === 'localhost') && url.port) return url;
+  if (isTestLoopback(url, env)) return url;
   if (url.protocol !== 'https:') throw invalid('Media URLs must use https://.');
   if (url.username || url.password) throw invalid('Media URLs must not contain credentials.');
-  if (isIP(host)) {
-    if (isPrivateIp(host)) throw invalid('Media URL points at a loopback, private or link-local address.');
+  if (!host) throw invalid('Media URL has no host.');
+  if (isIpLiteral(host)) {
+    if (isBlockedAddress(host)) throw invalid('Media URL points at a loopback, private, link-local or otherwise non-public address.');
     return url;
   }
-  if (host === 'localhost' || host.endsWith('.localhost')) throw invalid('Media URL points at a loopback address.');
-  try {
-    const addrs = await lookup(host, { all: true });
-    if (addrs.some((a) => isPrivateIp(a.address))) throw invalid('Media URL resolves to a loopback, private or link-local address.');
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    // Unresolvable here: nothing private to reach; the HEAD check will report it as unverified.
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
+    throw invalid('Media URL points at a loopback or non-public host name.');
   }
   return url;
+}
+
+/** `policy.verify_remote_media` (default false): when false, preflights make no outbound non-Meta request. */
+export function verifyRemoteMedia(ctx: { config: unknown }): boolean {
+  return (ctx.config as { policy?: { verify_remote_media?: boolean } }).policy?.verify_remote_media ?? false;
 }
 
 export interface HeadResult {
@@ -243,25 +234,31 @@ export interface HeadResult {
 }
 
 /**
- * `HEAD <url>` without following redirects. Unreachable/non-2xx -> `verified:false` (caller warns MEDIA_UNVERIFIED).
- * A 2xx with a wrong Content-Type or an oversize Content-Length is INVALID_INPUT.
+ * `HEAD <url>` without following redirects, connecting only to a freshly validated DNS answer (pinned). Used only when
+ * policy.verify_remote_media is true. Unreachable/non-2xx -> `verified:false` (caller warns MEDIA_UNVERIFIED). A non-public
+ * address is INVALID_INPUT. A 2xx with a wrong Content-Type or an oversize Content-Length is INVALID_INPUT with a generic
+ * message (the upstream values are never echoed).
  */
-export async function headRemote(url: string, expect: { type: MediaType | undefined; limit: number; label: string }): Promise<HeadResult> {
-  let res: Response;
+export async function headRemote(url: string, expect: { type: MediaType | undefined; limit: number; label: string }, env: NodeJS.ProcessEnv = process.env): Promise<HeadResult> {
+  const target = new URL(url);
+  let res;
   try {
-    res = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(10_000) });
-  } catch {
+    res = await pinnedRequest(target, { method: 'HEAD', timeoutMs: 10_000, skipValidation: isTestLoopback(target, env) });
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'INVALID_INPUT') throw error;
     return { verified: false, content_type: null, content_length: null };
   }
-  if (res.status < 200 || res.status > 299) return { verified: false, content_type: null, content_length: null };
-  const ct = res.headers.get('content-type');
-  const lenRaw = res.headers.get('content-length');
+  res.destroy();
+  const status = res.statusCode ?? 0;
+  if (status < 200 || status > 299) return { verified: false, content_type: null, content_length: null };
+  const ct = typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : null;
+  const lenRaw = typeof res.headers['content-length'] === 'string' ? res.headers['content-length'] : null;
   const length = lenRaw && /^\d+$/.test(lenRaw) ? Number(lenRaw) : null;
   if (ct) {
     const actual = typeFromContentType(ct);
-    if (expect.type === 'image' && actual !== 'image') throw invalid(`${expect.label} must be image/jpeg but the server reports ${ct}.`, { content_type: ct });
-    if (expect.type === 'video' && actual !== 'video') throw invalid(`${expect.label} must be a video/* type but the server reports ${ct}.`, { content_type: ct });
+    if (expect.type === 'image' && actual !== 'image') throw invalid(`${expect.label} does not have the expected media type (image/jpeg).`);
+    if (expect.type === 'video' && actual !== 'video') throw invalid(`${expect.label} does not have the expected media type (video/*).`);
   }
-  if (length !== null && length > expect.limit) throw invalid(`${expect.label} is ${length} bytes; the limit is ${expect.limit} bytes.`, { bytes: length, limit: expect.limit });
+  if (length !== null && length > expect.limit) throw invalid(`${expect.label} exceeds the size limit of ${expect.limit} bytes.`);
   return { verified: ct !== null || length !== null, content_type: ct, content_length: length };
 }

@@ -66,7 +66,7 @@ export class ApprovalsRepo {
         `INSERT INTO approvals (approval_id, account, action, target, params_json, params_hash, preview_json, planned_calls_json,
            warnings_json, state_fingerprint, status, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`
       )
-      .run(a.approval_id, a.account, a.action, n(a.target), j(a.params) ?? 'null', a.params_hash, j(a.preview), j(a.planned_calls ?? []),
+      .run(a.approval_id, a.account, a.action, n(a.target), JSON.stringify(a.params ?? null), a.params_hash, j(a.preview), j(a.planned_calls ?? []),
         j(a.warnings ?? []), n(a.state_fingerprint), a.created_at, a.expires_at);
   }
 
