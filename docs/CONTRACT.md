@@ -415,7 +415,7 @@ Remote-URL validation: rules in 1.11 (violation -> `INVALID_INPUT`), then `HEAD 
 
 Preflight requests, in order: HEAD per remote media/cover; `GET /{IG}/content_publishing_limit?fields=quota_usage,config` -> `quota_usage >= quota_total` -> `PUBLISH_QUOTA_EXHAUSTED` (no approval created); usage >= 90% -> warning `QUOTA_NEAR_LIMIT`. Unreadable quota fields -> no error, no warning.
 
-Result: standard preflight result (1.13.2). `preview = { kind, caption: string|null, media: [ {index, source: "url"|"local", url: string|null, path: string|null, type: "image"|"video", bytes: number|null, content_type: string|null} ], scheduled: boolean, publish_at: string|null, container_create_at: string|null, quota: {used, total}|null, options: object }`. `container_create_at = publish_at - container_lead_minutes` (clamped to not before the clock).
+Result: standard preflight result (1.13.2). `preview = { kind, caption: string|null, media: [ {index (1-based, matching `<media-host-url:N>`), source: "url"|"local", url: string|null, path: string|null, type: "image"|"video", bytes: number|null, content_type: string|null} ], scheduled: boolean, publish_at: string|null, container_create_at: string|null, quota: {used, total}|null, options: object }`. `container_create_at = publish_at - container_lead_minutes` (clamped to not before the clock).
 
 Local side effects of preflight: none (no staging, no files). The approval stores size+sha256 of local files.
 
