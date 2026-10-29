@@ -18,6 +18,11 @@ const oneLine = (text: string, max = 300): string => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 
+/** Last-line defence: deep-redact every string in the envelope (structuredContent and text). */
+export function finalize(result: CallToolResult): CallToolResult {
+  return redactDeep(result);
+}
+
 export function successResult(data: Record<string, unknown>, summary: string, isError = false): CallToolResult {
   return {
     ...(isError ? { isError: true } : {}),
@@ -39,6 +44,7 @@ export function errorResult(error: unknown): CallToolResult {
 /** Run a tool: strict validation (INVALID_INPUT), handler, uniform envelope. Never throws. */
 export async function runTool(ctx: AppContext, tool: ToolDef, rawArgs: unknown): Promise<CallToolResult> {
   try {
+    await ctx.primeSecrets();
     const parsed = z.strictObject(tool.inputSchema).safeParse(rawArgs ?? {});
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }));
@@ -48,10 +54,10 @@ export async function runTool(ctx: AppContext, tool: ToolDef, rawArgs: unknown):
       });
     }
     const out = await tool.handler(ctx, parsed.data);
-    return successResult(out.data, out.summary, out.isError);
+    return finalize(successResult(out.data, out.summary, out.isError));
   } catch (error) {
     if (!isAppError(error)) ctx.log.error(`tool ${tool.name} failed: ${errorMessage(error)}`);
-    return errorResult(error);
+    return finalize(errorResult(error));
   }
 }
 
@@ -77,7 +83,7 @@ export function buildServer(ctx: AppContext): Server {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = byName.get(req.params.name);
     if (!tool) return errorResult(new AppError('INVALID_INPUT', `Unknown tool "${req.params.name}".`));
-    return runTool(ctx, tool, req.params.arguments);
+    return (await runTool(ctx, tool, req.params.arguments));
   });
   return server;
 }

@@ -86,7 +86,7 @@ const preflightPublish = defineTool({
       kind: params.kind,
       caption: params.caption ?? null,
       media: params.media.map((m, i) => ({
-        index: i,
+        index: i + 1,
         source: m.source,
         url: m.url,
         path: m.path,

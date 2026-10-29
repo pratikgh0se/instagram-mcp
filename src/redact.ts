@@ -4,14 +4,30 @@ const live = new Set<string>();
 /** Register a live secret value (token, app secret, bearer) so it is scrubbed everywhere. */
 export function registerSecret(value: string | undefined | null): void {
   if (value && value.length >= 6) {
-    live.add(value);
-    const encoded = encodeURIComponent(value);
-    if (encoded !== value) live.add(encoded);
+    for (const v of secretVariants(value)) live.add(v);
   }
 }
 
+/** Raw, percent-encoded (upper/lower), form-encoded and JSON-escaped renderings of a secret. */
+export function secretVariants(value: string): string[] {
+  const out = new Set<string>([value]);
+  const enc = encodeURIComponent(value);
+  const lower = (x: string): string => x.replace(/%[0-9A-Fa-f]{2}/g, (m) => m.toLowerCase());
+  out.add(enc);
+  out.add(lower(enc));
+  const form = enc.replace(/%20/gi, '+');
+  out.add(form);
+  out.add(lower(form));
+  const jsonEsc = JSON.stringify(value).slice(1, -1);
+  out.add(jsonEsc);
+  out.add(value.replace(/\//g, '\\/'));
+  out.add(jsonEsc.replace(/\//g, '\\/'));
+  out.add(encodeURIComponent(enc));
+  return [...out].filter((v) => v.length >= 6);
+}
+
 export function unregisterSecret(value: string | undefined | null): void {
-  if (value) live.delete(value);
+  if (value) for (const v of secretVariants(value)) live.delete(v);
 }
 
 const PATTERNS: Array<[RegExp, string]> = [
@@ -40,7 +56,7 @@ export function redactDeep<T>(value: T): T {
   if (Array.isArray(value)) return value.map((v) => redactDeep(v)) as T;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = redactDeep(v);
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[redact(k)] = redactDeep(v);
     return out as T;
   }
   return value;

@@ -5,7 +5,8 @@ import {
 } from './config/index.js';
 import { GraphClient } from './graph/client.js';
 import { log, type Logger } from './log.js';
-import { createTokenStore, type TokenStore } from './secrets/index.js';
+import { registerSecret } from './redact.js';
+import { createTokenStore, SECRET_KINDS, GLOBAL_SCOPE, type TokenStore } from './secrets/index.js';
 import { openStorage, type Storage } from './storage/index.js';
 
 /** Everything a tool handler, action or job needs. One per process. */
@@ -18,6 +19,8 @@ export interface AppContext {
   clock: Clock;
   auth: TokenManager;
   log: Logger;
+  /** Load every configured secret (all accounts + global) from env and backend and register it with the redactor. */
+  primeSecrets(): Promise<void>;
   /** Resolve an alias (or the default account). Throws ACCOUNT_NOT_ALLOWED / AUTH_REQUIRED / INVALID_INPUT. */
   account(alias?: string | null): ResolvedAccount;
   /** Graph client bound to an account (alias or resolved account; omitted = default account). */
@@ -44,6 +47,16 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
   const secrets = createTokenStore(config, paths, env);
   const auth = new TokenManager({ config, store: secrets, storage, clock, fetch: opts.fetch, sleep: opts.sleep });
 
+  const primeSecrets = async (): Promise<void> => {
+    for (const kind of SECRET_KINDS) {
+      const scopes = kind === 'access_token' ? config.accounts.map((a) => a.alias) : [GLOBAL_SCOPE];
+      for (const scope of scopes) {
+        try { registerSecret(await secrets.get(scope, kind)); } catch { /* backend unavailable: nothing to register */ }
+      }
+    }
+  };
+  void primeSecrets();
+
   const clients = new Map<string, GraphClient>();
   const account = (alias?: string | null): ResolvedAccount => resolveAccount(config, alias);
   const graph = (a?: string | ResolvedAccount | null): GraphClient => {
@@ -58,7 +71,7 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
 
   return {
     mode: opts.mode ?? 'cli',
-    config, paths, storage, secrets, clock, auth, log, account, graph,
+    config, paths, storage, secrets, clock, auth, log, primeSecrets, account, graph,
     close: () => { try { storage.db.close(); } catch { /* already closed */ } }
   };
 }
