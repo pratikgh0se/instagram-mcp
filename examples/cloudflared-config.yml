@@ -1,0 +1,15 @@
+# cloudflared tunnel config (placeholders only). Run: cloudflared tunnel --config this-file run <TUNNEL_NAME>
+# 8765 = daemon listener (webhook path only unless started with --http; /mcp is never exposed here: it needs a bearer
+#        and the route below only forwards the webhook path).
+# 8766 = media host (serves GET /m/<token> so Instagram can fetch local files); set media_host.public_base_url to https://media.example.com
+tunnel: <TUNNEL_UUID>
+credentials-file: /ABSOLUTE/PATH/TO/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: hooks.example.com
+    path: ^/webhooks/instagram$
+    service: http://127.0.0.1:8765
+  - hostname: media.example.com
+    path: ^/m/
+    service: http://127.0.0.1:8766
+  - service: http_status:404

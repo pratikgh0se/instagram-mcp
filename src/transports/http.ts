@@ -25,6 +25,10 @@ export interface HttpOptions {
   extraRoutes?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
   /** Paths that skip bearer auth (e.g. signed webhook callbacks). Host/Origin checks still apply. */
   unauthenticatedPaths?: string[];
+  /** Serve the MCP endpoint (default true). False = only `exemptRoutes` are served (daemon without --http); no bearer needed. */
+  mcp?: boolean;
+  /** Routes exempt from the bearer AND Host/Origin checks (signed webhook callbacks, contract D6). Handled before every other check. */
+  exemptRoutes?: { paths: string[]; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> };
 }
 
 export interface HttpHandle {
@@ -69,13 +73,14 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
       action: 'Bind 127.0.0.1, or set http.allow_remote to true (and put TLS/auth in front) if you really need remote access.'
     });
   }
-  const bearer = await ctx.secrets.get(GLOBAL_SCOPE, 'http_bearer');
+  const mcpEnabled = opts.mcp !== false;
+  const bearer = mcpEnabled ? await ctx.secrets.get(GLOBAL_SCOPE, 'http_bearer') : 'unused-webhook-only-listener';
   if (!bearer) {
     throw new AppError('CONFIG_INVALID', 'No HTTP bearer token is configured; refusing to start the HTTP transport.', {
       action: 'Run `instagram-mcp http-token rotate` (or set INSTAGRAM_MCP_HTTP_TOKEN) and send it as "Authorization: Bearer <token>".'
     });
   }
-  registerSecret(bearer);
+  if (mcpEnabled) registerSecret(bearer);
   const expected = sha(bearer);
 
   // Host must be a loopback name on the bound port, the bound host, or the host part of an allowed origin / allowed_hosts entry.
@@ -110,6 +115,17 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const ip = req.socket.remoteAddress ?? 'unknown';
+    if (opts.exemptRoutes) {
+      const p = new URL(req.url ?? '/', 'http://localhost').pathname;
+      if (opts.exemptRoutes.paths.includes(p)) {
+        await opts.exemptRoutes.handler(req, res);
+        return;
+      }
+    }
+    if (!mcpEnabled) {
+      sendJson(res, 404, rpcError(-32000, 'Not found'));
+      return;
+    }
     // Order (contract section 4): body size, Host (DNS-rebinding), Origin, bearer.
     if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
       sendJson(res, 413, rpcError(-32000, 'Request body too large (1 MB limit)'), { connection: 'close' });

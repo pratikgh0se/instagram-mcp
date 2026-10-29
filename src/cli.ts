@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { accounts, auth, doctor, httpToken, serve, version } from './cli/commands.js';
+import { runDaemon } from './daemon/index.js';
+import { accounts, auth, doctor, httpToken, scheduler, serve, version, webhooks } from './cli/commands.js';
 import { AppError, isAppError } from './errors.js';
 import { errorMessage } from './redact.js';
-
-const NOT_YET = new Set(['daemon', 'scheduler', 'webhooks']);
 
 async function main(argv: string[]): Promise<number> {
   const [first, ...rest] = argv;
@@ -18,12 +17,11 @@ async function main(argv: string[]): Promise<number> {
     case 'http-token': return httpToken(rest);
     case 'doctor': return doctor(rest);
     case 'version': return version();
+    case 'daemon': return runDaemon(rest);
+    case 'scheduler': return scheduler(rest);
+    case 'webhooks': return webhooks(rest);
     default:
-      if (NOT_YET.has(first)) {
-        process.stderr.write(`instagram-mcp: "${first}" is not implemented yet in this build.\n`);
-        return 2;
-      }
-      throw new AppError('INVALID_INPUT', `Unknown command "${first}". Commands: serve, auth, accounts, http-token, doctor, version.`);
+      throw new AppError('INVALID_INPUT', `Unknown command "${first}". Commands: serve, daemon, scheduler, webhooks, auth, accounts, http-token, doctor, version.`);
   }
 }
 

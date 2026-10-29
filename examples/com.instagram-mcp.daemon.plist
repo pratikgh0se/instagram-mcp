@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Copy to ~/Library/LaunchAgents/com.instagram-mcp.daemon.plist, edit the placeholders, then:
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.instagram-mcp.daemon.plist
+     Secrets live in the keychain (secrets.backend "keychain"); do not put tokens in this file. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.instagram-mcp.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/ABSOLUTE/PATH/TO/instagram-mcp/dist/cli.js</string>
+    <string>daemon</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>INSTAGRAM_MCP_HOME</key><string>/Users/YOU/.instagram-mcp</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/YOU/.instagram-mcp/daemon.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOU/.instagram-mcp/daemon.err.log</string>
+</dict>
+</plist>

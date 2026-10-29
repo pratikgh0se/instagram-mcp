@@ -3,6 +3,7 @@ import { listAccounts, type ResolvedAccount } from '../config/index.js';
 import { errorMessage } from '../redact.js';
 import { isAppError } from '../errors.js';
 import { resolveMatrix } from '../graph/capabilities.js';
+import { currentLeaseHolder } from '../daemon/lease.js';
 import { envTokenName, GLOBAL_SCOPE } from '../secrets/index.js';
 
 export interface DoctorCheck {
@@ -81,8 +82,9 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
   const mh = ctx.config.media_host.public_base_url;
   out.push(mh ? check('media_host', 'pass', `public_base_url is ${mh}.`) : check('media_host', 'warn', 'media_host.public_base_url is not set (local files cannot be published).', 'Set media_host.public_base_url to your tunnel URL.'));
 
-  const lease = ctx.storage.db.prepare("SELECT owner, expires_at FROM locks WHERE name='daemon'").get() as { expires_at: string } | undefined;
-  out.push(lease && lease.expires_at > ctx.clock.nowIso() ? check('daemon', 'pass', 'A daemon holds the lease.') : check('daemon', 'warn', 'No daemon is running (scheduled posts and webhooks need it).'));
+  // Real wall time: the lease never follows the frozen test clock.
+  const lease = currentLeaseHolder(ctx.storage.db);
+  out.push(lease ? check('daemon', 'pass', 'A daemon holds the lease.') : check('daemon', 'warn', 'No daemon is running (scheduled posts and webhooks need it).'));
 
   const wh = ctx.config.webhooks.enabled;
   const verify = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'webhook_verify_token').catch(() => undefined));
