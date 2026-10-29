@@ -223,8 +223,8 @@ export async function assertPublicUrl(raw: string, env: NodeJS.ProcessEnv = proc
 }
 
 /** `policy.verify_remote_media` (default false): when false, preflights make no outbound non-Meta request. */
-export function verifyRemoteMedia(ctx: { config: unknown }): boolean {
-  return (ctx.config as { policy?: { verify_remote_media?: boolean } }).policy?.verify_remote_media ?? false;
+export function verifyRemoteMedia(ctx: { config: { policy: { verify_remote_media: boolean } } }): boolean {
+  return ctx.config.policy.verify_remote_media;
 }
 
 export interface HeadResult {

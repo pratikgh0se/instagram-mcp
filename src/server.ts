@@ -6,6 +6,7 @@ import { AppError, isAppError } from './errors.js';
 import { errorMessage, redact, redactDeep } from './redact.js';
 import { allTools, registerAll } from './tools/index.js';
 import type { ToolDef } from './tools/types.js';
+import { elicitorFromServer, withElicitor } from './safety/elicit.js';
 
 export const SERVER_NAME = 'instagram-mcp';
 
@@ -83,7 +84,7 @@ export function buildServer(ctx: AppContext): Server {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = byName.get(req.params.name);
     if (!tool) return errorResult(new AppError('INVALID_INPUT', `Unknown tool "${req.params.name}".`));
-    return (await runTool(ctx, tool, req.params.arguments));
+    return await withElicitor(elicitorFromServer(server), () => runTool(ctx, tool, req.params.arguments));
   });
   return server;
 }

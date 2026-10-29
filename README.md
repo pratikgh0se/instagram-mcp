@@ -133,6 +133,10 @@ Controls in `config.json` under `policy`:
 - `dry_run: true` makes `instagram_approve` validate and return the planned Graph calls without sending anything. Good for a first trial.
 - `disabled_actions: ["delete_media", "send_message"]` blocks named actions.
 - `approval_ttl_seconds` sets the approval lifetime.
+- `verify_remote_media` (default `false`): when true, preflights resolve remote media hosts (pinned DNS) and send one HEAD each; when false no non-Meta request is made and a `MEDIA_UNVERIFIED` warning is returned.
+- `confirm_via_elicitation` (default `true`): `instagram_approve` asks you to confirm through MCP elicitation when the client supports it; declining returns `POLICY_DENIED`.
+
+Other keys: `local_media_dirs` (array, default `["<home>/media"]`) lists the only directories local publish media may come from; `media_host.bind` (default `127.0.0.1`) and `media_host.allow_remote` (default `false`, required for a non-loopback bind, e.g. in Docker).
 
 Publishing never double-posts: an ambiguous `media_publish` failure is recorded as outcome `unknown` with the creation id, and `instagram_get_operation` reconciles it instead of retrying.
 

@@ -99,7 +99,7 @@ export async function approveApproval(ctx: AppContext, approvalId: string): Prom
 
   // Human confirmation (MCP elicitation) when the client supports it. Decline/cancel leaves the approval pending.
   const elicitor = currentElicitor();
-  if (!dryRun && elicitor && ((ctx.config.policy as { confirm_via_elicitation?: boolean }).confirm_via_elicitation ?? true)) {
+  if (!dryRun && elicitor && ctx.config.policy.confirm_via_elicitation) {
     const message = `${summarizeApproval({ action: row.action, account: row.account, target: row.target, preview: row.preview })}\n\nApprove and execute this action?`;
     let decision: 'accept' | 'decline' | 'cancel' = 'decline';
     let failed = false;

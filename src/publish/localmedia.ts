@@ -8,7 +8,7 @@ const expand = (p: string): string => resolve(p.replace(/^~(?=$|\/)/, homedir())
 
 /** Configured local media directories (default `<home>/media`), `~` expanded, as given (not realpath'd). */
 export function configuredMediaDirs(ctx: AppContext): string[] {
-  const dirs = (ctx.config as unknown as { local_media_dirs?: string[] }).local_media_dirs;
+  const dirs = ctx.config.local_media_dirs;
   return dirs && dirs.length > 0 ? dirs.map(expand) : [join(ctx.paths.home, 'media')];
 }
 

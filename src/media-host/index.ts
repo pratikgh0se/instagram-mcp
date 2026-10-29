@@ -290,13 +290,13 @@ export async function ensureMediaHost(ctx: AppContext): Promise<void> {
         // Another instance (e.g. the daemon) with the same state dir may own the port; it serves the same staged files.
         void probeSameHost(ctx).then((same) => {
           if (same) resolve();
-          else reject(mediaHostUnavailable(`The media host could not bind 127.0.0.1:${ctx.config.media_host.port} (EADDRINUSE, and the port is not served by this server's state dir).`));
+          else reject(mediaHostUnavailable(`The media host could not bind ${ctx.config.media_host.bind}:${ctx.config.media_host.port} (EADDRINUSE, and the port is not served by this server's state dir).`));
         });
         return;
       }
-      reject(mediaHostUnavailable(`The media host could not bind 127.0.0.1:${ctx.config.media_host.port} (${error.code ?? errorMessage(error)}).`));
+      reject(mediaHostUnavailable(`The media host could not bind ${ctx.config.media_host.bind}:${ctx.config.media_host.port} (${error.code ?? errorMessage(error)}).`));
     });
-    server.listen(ctx.config.media_host.port, '127.0.0.1', () => {
+    server.listen(ctx.config.media_host.port, ctx.config.media_host.bind, () => {
       server.removeAllListeners('error');
       server.on('error', (error) => ctx.log.warn(`media host error: ${errorMessage(error)}`));
       server.unref();

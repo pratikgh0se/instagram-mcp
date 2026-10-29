@@ -52,6 +52,18 @@ Release candidate. The version stays at rc until the live end-to-end run in [doc
 - Outbound fetches of user-supplied URLs are HTTPS-only with an SSRF guard; downloads are restricted to Meta CDN hosts and confined to the downloads directory.
 - Account allowlist enforced on every tool.
 - CI runs typecheck, build, smoke check, `npm audit --omit=dev --audit-level=high`, gitleaks and `npm pack --dry-run`.
+- Security-review hardening (2026-10-29):
+  - Local publish media must resolve inside `local_media_dirs` (default `<home>/media`); previews show path, real path, size and sha256, and approve re-hashes.
+  - Preflights make no outbound non-Meta request or DNS lookup by default (`policy.verify_remote_media: false`).
+  - `instagram_approve` asks for confirmation through MCP elicitation when supported (`policy.confirm_via_elicitation`); preflight results carry a server-written summary.
+  - Scheduler per-job claims and a no-republish rule with reconciliation of attempted publishes.
+  - SSRF classifier covering all IPv4/IPv6 encodings with pinned DNS, shared with downloads; downloads use exclusive no-follow temp files.
+  - Media host port ownership via an HMAC challenge probe; `media_host.bind` and `allow_remote` settings.
+  - In-memory secret cache (restart a running daemon after `auth set-token`/`auth refresh`).
+  - Encrypted-file backend hardening and strict config file permission, owner and symlink checks.
+  - https-only endpoint overrides, HTTP request timeouts and session expiry.
+  - Webhook receiver validates the signature header cheaply first (401 before 503).
+  - CI actions pinned by commit SHA.
 
 ## [0.1.0]
 

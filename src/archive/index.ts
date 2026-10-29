@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import { pinnedRequest } from '../net/ssrf.js';
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { chmodSync, constants, createWriteStream, openSync, existsSync, mkdirSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -154,7 +154,8 @@ async function fetchToFile(url: URL, dir: string, base: string, fixedExt: string
   assertInside(dir, target);
   const tmp = `${target}.${process.pid}.part`;
   try {
-    await pipeline(res, createWriteStream(tmp, { mode: 0o600 }));
+    const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+    await pipeline(res, createWriteStream(tmp, { fd, autoClose: true }));
     chmodSync(tmp, 0o600);
     renameSync(tmp, target);
   } catch (cause) {

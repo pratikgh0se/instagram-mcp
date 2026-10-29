@@ -50,6 +50,7 @@ This document is the threat model for instagram-mcp and maps each protection to 
 - In Docker, supply one persistent `INSTAGRAM_MCP_MASTER_KEY` (secret or 0600 env file); never generate it per run, and avoid `-e` on the command line (visible in `docker inspect`). Set `media_host.bind` to `0.0.0.0` with `media_host.allow_remote: true` inside the container and publish the port on 127.0.0.1 only.
 - Use the encrypted-file or env backend carefully: `INSTAGRAM_MCP_MASTER_KEY` in a client config file or service environment file is a secret; keep those files mode 0600.
 - Do not expose port 8765 or 8766 directly to the internet. Use a tunnel with narrow routes ([../examples/cloudflared-config.yml](../examples/cloudflared-config.yml)). If you must serve the MCP endpoint remotely, put TLS and an authenticating proxy in front and set `http.allow_remote` and `allowed_hosts` deliberately.
+- Secrets are cached in memory per process. After `auth set-token`, `auth refresh` or `auth set-app-secret` from the CLI, restart any running daemon or long-lived server (macOS `launchctl kickstart -k gui/$(id -u)/com.instagram-mcp.daemon`; Linux `systemctl restart instagram-mcp-daemon`) so it picks up the new value.
 - Rotate on suspicion: `instagram-mcp http-token rotate`, reset the app secret in the Meta dashboard then `auth set-app-secret`, and generate a new token then `auth set-token`.
 - Require human confirmation for `instagram_approve` in your MCP client.
 

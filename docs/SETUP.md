@@ -295,6 +295,8 @@ Tokens are read from the keychain, so none go in the plist.
 
 Linux (systemd): copy [../examples/instagram-mcp-daemon.service](../examples/instagram-mcp-daemon.service) to `/etc/systemd/system/`, edit the user and paths, put `INSTAGRAM_MCP_MASTER_KEY=...` in `/etc/instagram-mcp.env` with mode 0600, set `secrets.backend` to `encrypted-file`, then `systemctl enable --now instagram-mcp-daemon`.
 
+Secrets are cached in memory per process. After `auth set-token` or `auth refresh` from the CLI, restart the running daemon: `launchctl kickstart -k gui/$(id -u)/com.instagram-mcp.daemon` (macOS) or `systemctl restart instagram-mcp-daemon` (Linux).
+
 Docker: see the header of the [Dockerfile](../Dockerfile).
 
 Cron alternative without a daemon: run `instagram-mcp scheduler run-once` every few minutes. It exits 3 if a daemon already holds the lease.
