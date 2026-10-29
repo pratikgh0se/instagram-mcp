@@ -19,7 +19,7 @@ export interface AppContext {
   clock: Clock;
   auth: TokenManager;
   log: Logger;
-  /** Load every configured secret (all accounts + global) from env and backend and register it with the redactor. */
+  /** Load every configured secret (all accounts + global) once and register it with the redactor. Memoized: later calls are free. */
   primeSecrets(): Promise<void>;
   /** Resolve an alias (or the default account). Throws ACCOUNT_NOT_ALLOWED / AUTH_REQUIRED / INVALID_INPUT. */
   account(alias?: string | null): ResolvedAccount;
@@ -47,13 +47,18 @@ export function createContext(opts: CreateContextOptions = {}): AppContext {
   const secrets = createTokenStore(config, paths, env);
   const auth = new TokenManager({ config, store: secrets, storage, clock, fetch: opts.fetch, sleep: opts.sleep });
 
-  const primeSecrets = async (): Promise<void> => {
-    for (const kind of SECRET_KINDS) {
-      const scopes = kind === 'access_token' ? config.accounts.map((a) => a.alias) : [GLOBAL_SCOPE];
-      for (const scope of scopes) {
-        try { registerSecret(await secrets.get(scope, kind)); } catch { /* backend unavailable: nothing to register */ }
+  // Load every secret once (the store caches them and registers them for redaction); later calls reuse the result.
+  let primed: Promise<void> | undefined;
+  const primeSecrets = (): Promise<void> => {
+    primed ??= (async () => {
+      for (const kind of SECRET_KINDS) {
+        const scopes = kind === 'access_token' ? config.accounts.map((a) => a.alias) : [GLOBAL_SCOPE];
+        for (const scope of scopes) {
+          try { registerSecret(await secrets.get(scope, kind)); } catch { /* backend unavailable: nothing to register */ }
+        }
       }
-    }
+    })();
+    return primed;
   };
   void primeSecrets();
 

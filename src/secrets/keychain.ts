@@ -9,6 +9,11 @@ function service(): string {
   return process.env.INSTAGRAM_MCP_KEYCHAIN_SERVICE || 'instagram-mcp';
 }
 
+/** `security` gets only PATH and HOME: never the master key, tokens or other secrets from our environment. */
+function minimalEnv(): NodeJS.ProcessEnv {
+  return { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...(process.env.HOME ? { HOME: process.env.HOME } : {}) };
+}
+
 /** Quote one argument for the `security -i` command parser (double quotes, backslash escapes). */
 function q(arg: string): string {
   return `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -16,7 +21,7 @@ function q(arg: string): string {
 
 function run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(SECURITY, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile(SECURITY, args, { encoding: 'utf8', env: minimalEnv() }, (error, stdout, stderr) => {
       if (error && typeof (error as NodeJS.ErrnoException).code !== 'number') {
         reject(error);
         return;
@@ -31,7 +36,8 @@ function run(args: string[]): Promise<{ code: number; stdout: string; stderr: st
  *
  * Writes use `security -i` (interactive mode) and send the add-generic-password command on STDIN,
  * so the secret never appears in argv or the process listing. Reads pass only service/account in
- * argv; the secret comes back on stdout. Limitation: macOS only; the secret briefly lives in this
+ * argv; the secret comes back on stdout. Limitation: items created this way carry no per-app ACL, so any process
+ * running as the same user can read them with `security find-generic-password -w` without a prompt. Limitation: macOS only; the secret briefly lives in this
  * process's memory and the `security` child's stdin pipe.
  */
 export class KeychainTokenStore implements TokenStore {
@@ -56,7 +62,7 @@ export class KeychainTokenStore implements TokenStore {
     assertSecretValue(value);
     const line = `add-generic-password -U -s ${q(service())} -a ${q(this.account(scope, kind))} -w ${q(value)}\n`;
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(SECURITY, ['-i'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(SECURITY, ['-i'], { stdio: ['pipe', 'pipe', 'pipe'], env: minimalEnv() });
       let stderr = '';
       child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
       child.on('error', reject);

@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { AppError } from '../errors.js';
 import { redact, registerSecret } from '../redact.js';
 import type { LoginPath } from '../config/schema.js';
+import { checkUrlOverride } from '../config/load.js';
 import { mapMetaError, TRANSIENT_CODES, type MetaErrorBody } from './errors.js';
 
 export type QueryValue = string | number | boolean | null | undefined | unknown[] | Record<string, unknown>;
@@ -47,8 +48,9 @@ export const MIN_DELAY_MS = 1;
 export const MAX_RETRY_AFTER_MS = 30_000;
 
 export function graphBaseUrl(login: LoginPath, version: string, env: NodeJS.ProcessEnv = process.env): string {
-  const override = login === 'instagram' ? env.INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM : env.INSTAGRAM_MCP_GRAPH_URL_FACEBOOK;
-  const host = override?.trim().replace(/\/+$/, '') || (login === 'instagram' ? 'https://graph.instagram.com' : 'https://graph.facebook.com');
+  const name = login === 'instagram' ? 'INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM' : 'INSTAGRAM_MCP_GRAPH_URL_FACEBOOK';
+  const override = checkUrlOverride(name, env[name], env);
+  const host = override?.replace(/\/+$/, '') || (login === 'instagram' ? 'https://graph.instagram.com' : 'https://graph.facebook.com');
   // An empty version yields the bare host: Meta documents the Instagram-Login token exchange/refresh endpoints unversioned.
   return version ? `${host}/${version}` : host;
 }

@@ -273,6 +273,8 @@ You need a domain on Cloudflare and the `cloudflared` tool (`brew install cloudf
    "media_host": { "public_base_url": "https://media.yourdomain.example", "port": 8766 }
    ```
 
+   `public_base_url` must be https. The media host binds 127.0.0.1; in Docker set `"bind": "0.0.0.0", "allow_remote": true` and publish the port on 127.0.0.1 only. Local media is read only from `local_media_dirs` (default `~/.instagram-mcp/media`, created 0700).
+
 7. Check: `instagram-mcp doctor` now shows `[PASS] media_host`. The host starts on demand when you publish a local file; before then nothing listens on 8766, so a request to the public URL returns a tunnel error. That is expected. [TESTING-LIVE.md](TESTING-LIVE.md) covers a real reachability check during a publish.
 
 ## G. Optional: daemon for scheduling and snapshots
@@ -357,7 +359,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 
 | Symptom or code | Likely cause | Fix |
 |---|---|---|
-| `CONFIG_INVALID` at start | Invalid JSON, unknown key, world-writable file, facebook account without `page_id` | Read the message; `chmod 600 ~/.instagram-mcp/config.json`; fix the field |
+| `CONFIG_INVALID` at start | Invalid JSON, unknown key, group/world-writable, foreign-owned or symlinked config file, http API URL override or `media_host.public_base_url` (https only outside test mode), facebook account without `page_id` | Read the message; `chmod 600 ~/.instagram-mcp/config.json`; fix the field |
 | `AUTH_REQUIRED` | No token stored for the account | `instagram-mcp auth set-token --account <alias>` |
 | Meta code 190 (`TOKEN_EXPIRED` or `AUTH_FAILED`) | Token expired, revoked, or user changed password | Generate a new token (section D) and run `auth set-token` again |
 | Meta code 190 subcode 463 or 467 | Token expired or session invalidated | Same as above |

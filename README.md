@@ -154,8 +154,9 @@ The daemon can receive Instagram webhooks (comments, mentions, messages and more
 ## Security model
 
 - Secrets live in the macOS keychain, an AES-256-GCM encrypted file, or read-only environment variables. They never appear in tool output, errors, logs, audit rows or the SQLite database.
-- State directory is mode 0700 and files 0600; a world-writable config file is refused.
-- HTTP transport: loopback default, mandatory bearer (constant-time compare), Host and Origin checks, 1 MB body limit, rate-limited failures.
+- State directory is mode 0700 and files 0600; a config file that is group/world-writable, foreign-owned or a symlink is refused. Cleartext (http) API URL overrides and media host URLs are rejected outside test mode.
+- Keychain items can be read by any process running as your user; use the encrypted-file backend with a passphrase if that matters (see [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md)).
+- HTTP transport: loopback default, mandatory bearer (constant-time compare), Host and Origin checks, 1 MB body limit, rate-limited failures, session idle expiry and server timeouts.
 - Webhooks are accepted only with a valid HMAC signature. The media host serves only unguessable, expiring tokens for staged files.
 - User-supplied URLs are fetched over HTTPS only with an SSRF guard; downloads only come from Meta CDN hosts.
 - Only configured accounts are reachable from any tool.

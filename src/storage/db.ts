@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { chmodSync } from 'node:fs';
+import { chmodSync, closeSync, openSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { AppError } from '../errors.js';
 import { ensurePrivateDir } from '../config/load.js';
@@ -29,6 +29,10 @@ export function openDatabase(file: string): Db {
     throw new AppError('INTERNAL', 'node:sqlite is unavailable; Node >= 22.13 is required.', { cause });
   }
   ensurePrivateDir(dirname(file));
+  // Create the db and its WAL sidecars at 0600 up front so they never exist with umask-derived modes.
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { closeSync(openSync(file + suffix, 'a', 0o600)); } catch { /* best effort */ }
+  }
   const db = new DatabaseSyncCtor(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA busy_timeout = 5000;');

@@ -39,17 +39,28 @@ export const configSchema = z.strictObject({
       dry_run: z.boolean().default(false),
       disabled_actions: z.array(z.enum(ACTION_NAMES)).default([]),
       approval_ttl_seconds: z.number().int().min(1).max(86400).default(600),
-      allow_human_agent_tag: z.boolean().default(false)
+      allow_human_agent_tag: z.boolean().default(false),
+      verify_remote_media: z.boolean().default(false),
+      confirm_via_elicitation: z.boolean().default(true)
     })
-    .default({ read_only: false, dry_run: false, disabled_actions: [], approval_ttl_seconds: 600, allow_human_agent_tag: false }),
+    .default({
+      read_only: false, dry_run: false, disabled_actions: [], approval_ttl_seconds: 600, allow_human_agent_tag: false,
+      verify_remote_media: false, confirm_via_elicitation: true
+    }),
   media_host: z
-    .object({ public_base_url: z
+    .object({
+      public_base_url: z
         .string()
         .url()
         .refine((v) => /^https?:\/\//i.test(v), 'must be an http(s) URL')
+        .refine((v) => /^https:\/\//i.test(v) || process.env.INSTAGRAM_MCP_TEST_MODE === '1', 'must be https (Meta fetches media from it; cleartext allows content swapping)')
         .nullish()
-        .transform((v) => (v ? v.replace(/\/+$/, '') : v)), port: z.number().int().min(1).max(65535).default(8766) })
-    .default({ public_base_url: null, port: 8766 }),
+        .transform((v) => (v ? v.replace(/\/+$/, '') : v)),
+      port: z.number().int().min(1).max(65535).default(8766),
+      bind: z.string().min(1).default('127.0.0.1'),
+      allow_remote: z.boolean().default(false)
+    })
+    .default({ public_base_url: null, port: 8766, bind: '127.0.0.1', allow_remote: false }),
   http: z
     .object({
       host: z.string().default('127.0.0.1'),
@@ -70,10 +81,15 @@ export const configSchema = z.strictObject({
     .default({ enabled: false, path: '/webhooks/instagram' }),
   snapshots: z.object({ daily_hour_local: z.number().int().min(0).max(23).default(6) }).default({ daily_hour_local: 6 }),
   token_in_header: z.boolean().default(false),
-  downloads_dir: z.string().nullish()
+  downloads_dir: z.string().nullish(),
+  /** Directories local media may be read from. Default (applied by loadConfig): [<home>/media]. */
+  local_media_dirs: z.array(z.string().min(1)).default([])
 }).superRefine((c, ctx) => {
   if (!c.http.allow_remote && !isLoopback(c.http.host)) {
     ctx.addIssue({ code: 'custom', path: ['http', 'host'], message: 'must be a loopback address unless http.allow_remote is true' });
+  }
+  if (!c.media_host.allow_remote && !isLoopback(c.media_host.bind)) {
+    ctx.addIssue({ code: 'custom', path: ['media_host', 'bind'], message: 'must be a loopback address unless media_host.allow_remote is true' });
   }
 });
 

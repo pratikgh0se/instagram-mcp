@@ -8,8 +8,10 @@ import { AppError } from '../errors.js';
 import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { buildServer } from '../server.js';
+import { applyServerTimeouts, BodyTooLarge, MAX_BODY_BYTES, readBodyLimited, respondTooLarge } from './limits.js';
 
-const MAX_BODY_BYTES = 1024 * 1024;
+const SESSION_IDLE_MS = 30 * 60_000;
+const SWEEP_MS = 60_000;
 const AUTH_FAIL_LIMIT = 20;
 const AUTH_FAIL_WINDOW_MS = 60_000;
 
@@ -34,10 +36,18 @@ export interface HttpOptions {
   mcp?: boolean;
   /** Routes exempt from the bearer AND Host/Origin checks (signed webhook callbacks, contract D6). Handled before every other check. */
   exemptRoutes?: { paths: string[]; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> };
+  /** Idle MCP sessions are closed after this many ms (default 30 min). */
+  sessionIdleMs?: number;
+  /** Interval of the idle/failure sweep (default 60 s). */
+  sweepMs?: number;
 }
 
 export interface HttpHandle {
   server: HttpServer;
+  /** Live MCP sessions (exposed for tests). */
+  sessions: Map<string, StreamableHTTPServerTransport>;
+  /** Run the idle-session / failed-auth sweep now (exposed for tests). */
+  sweep(): void;
   host: string;
   port: number;
   close(): Promise<void>;
@@ -54,21 +64,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown, headers: R
 }
 
 const rpcError = (code: number, message: string) => ({ jsonrpc: '2.0', error: { code, message }, id: null });
-
-class BodyTooLarge extends Error {}
-
-async function readBody(req: IncomingMessage): Promise<Buffer> {
-  const declared = Number(req.headers['content-length'] ?? 0);
-  if (declared > MAX_BODY_BYTES) throw new BodyTooLarge();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw new BodyTooLarge();
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks);
-}
 
 /** Streamable HTTP MCP endpoint at /mcp: loopback bind, mandatory bearer, Host/Origin allowlists, 1 MB body limit. */
 export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promise<HttpHandle> {
@@ -91,6 +86,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
   // Host must be a loopback name on the bound port, the bound host, or the host part of an allowed origin / allowed_hosts entry.
   let boundPort = 0;
   const looseHosts = new Set<string>(cfg.allowed_hosts.map((h) => h.toLowerCase()));
+  // allowed_hosts entries are matched against the Host header exactly (so "host:port" works); a bare hostname matches any port.
   for (const o of cfg.allowed_origins) {
     try { looseHosts.add(new URL(o).hostname.toLowerCase().replace(/^\[|\]$/g, '')); } catch { /* ignore malformed entry */ }
   }
@@ -100,18 +96,39 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
     const onBoundPort = portPart === String(boundPort);
     if (['127.0.0.1', 'localhost', '::1'].includes(name) && onBoundPort) return true;
     if (name === opts.host.replace(/^\[|\]$/g, '').toLowerCase() && onBoundPort) return true;
-    return looseHosts.has(name);
+    return looseHosts.has(hostHeader.toLowerCase()) || looseHosts.has(name);
   };
   const allowedOrigins = new Set(cfg.allowed_origins); // contract 4: exact string equality, no normalisation
   const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const lastSeen = new Map<string, number>();
   const failures = new Map<string, number[]>();
+  const idleMs = opts.sessionIdleMs ?? SESSION_IDLE_MS;
 
   const recentFailures = (ip: string): number => {
     const now = Date.now();
     const list = (failures.get(ip) ?? []).filter((t) => now - t < AUTH_FAIL_WINDOW_MS);
-    failures.set(ip, list);
+    if (list.length) failures.set(ip, list);
+    else failures.delete(ip);
     return list.length;
   };
+  const addFailure = (ip: string): void => {
+    const list = failures.get(ip) ?? [];
+    list.push(Date.now());
+    failures.set(ip, list);
+  };
+  const sweep = (): void => {
+    const now = Date.now();
+    for (const ip of [...failures.keys()]) recentFailures(ip);
+    for (const [id, t] of [...sessions]) {
+      if (now - (lastSeen.get(id) ?? 0) > idleMs) {
+        sessions.delete(id);
+        lastSeen.delete(id);
+        void t.close().catch(() => undefined);
+      }
+    }
+  };
+  const sweepTimer = setInterval(sweep, opts.sweepMs ?? SWEEP_MS);
+  sweepTimer.unref();
 
   const hostnameOf = (hostHeader: string): string => {
     if (hostHeader.startsWith('[')) return hostHeader.slice(1, hostHeader.indexOf(']')).toLowerCase();
@@ -133,7 +150,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
     }
     // Order (contract section 4): body size, Host (DNS-rebinding), Origin, bearer.
     if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
-      sendJson(res, 413, rpcError(-32000, 'Request body too large (1 MB limit)'), { connection: 'close' });
+      respondTooLarge(req, res, JSON.stringify(rpcError(-32000, 'Request body too large (1 MB limit)')));
       return;
     }
     const host = req.headers.host;
@@ -162,7 +179,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
       const m = /^Bearer\s+(.+)$/i.exec(header);
       const valid = m ? timingSafeEqual(sha(m[1]!.trim()), expected) : false;
       if (!valid) {
-        failures.get(ip)!.push(Date.now());
+        addFailure(ip);
         sendJson(res, 401, { error: { code: m ? 'AUTH_FAILED' : 'AUTH_REQUIRED', message: m ? 'Invalid bearer token.' : 'Missing bearer token.' } }, { 'www-authenticate': 'Bearer' });
         return;
       }
@@ -176,14 +193,15 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
 
     const sid = req.headers['mcp-session-id'];
     const sessionId = Array.isArray(sid) ? sid[0] : sid;
+    if (sessionId && sessions.has(sessionId)) lastSeen.set(sessionId, Date.now());
 
     if (req.method === 'POST') {
       let parsed: unknown;
       try {
-        const raw = await readBody(req);
+        const raw = await readBodyLimited(req);
         parsed = JSON.parse(raw.toString('utf8'));
       } catch (error) {
-        if (error instanceof BodyTooLarge) sendJson(res, 413, rpcError(-32000, 'Request body too large (1 MB limit)'));
+        if (error instanceof BodyTooLarge) respondTooLarge(req, res, JSON.stringify(rpcError(-32000, 'Request body too large (1 MB limit)')));
         else sendJson(res, 400, rpcError(-32700, 'Parse error'));
         return;
       }
@@ -195,9 +213,9 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
         }
         const t = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (id) => { sessions.set(id, t); }
+          onsessioninitialized: (id) => { sessions.set(id, t); lastSeen.set(id, Date.now()); }
         });
-        t.onclose = () => { if (t.sessionId) sessions.delete(t.sessionId); };
+        t.onclose = () => { if (t.sessionId) { sessions.delete(t.sessionId); lastSeen.delete(t.sessionId); } };
         await buildServer(ctx).connect(t);
         transport = t;
       }
@@ -225,6 +243,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
     });
   });
 
+  applyServerTimeouts(server);
   await new Promise<void>((resolve, reject) => {
     server.once('error', (error: NodeJS.ErrnoException) =>
       reject(new AppError('CONFIG_INVALID', `Cannot listen on ${opts.host}:${opts.port}: ${error.message}`, { cause: error }))
@@ -236,8 +255,10 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
   process.stderr.write(JSON.stringify({ event: 'listening', host: opts.host, port, transport: 'http' }) + '\n');
 
   return {
-    server, host: opts.host, port,
+    server, host: opts.host, port, sessions,
+    sweep,
     close: async () => {
+      clearInterval(sweepTimer);
       for (const t of sessions.values()) await t.close().catch(() => undefined);
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

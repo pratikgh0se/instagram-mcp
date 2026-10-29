@@ -31,6 +31,21 @@ export function tokenRefreshJob(): JobSpec {
   };
 }
 
+const WEBHOOK_RETENTION_DAYS = 30;
+
+/** Daily retention for webhook_events (older than 30 days are deleted). */
+export function webhookPruneJob(): JobSpec {
+  return {
+    name: 'webhook-prune',
+    intervalMs: DAY_MS,
+    run: async (ctx: AppContext): Promise<void> => {
+      const cutoff = new Date(Date.parse(ctx.clock.nowIso()) - WEBHOOK_RETENTION_DAYS * DAY_MS).toISOString();
+      const r = ctx.storage.db.prepare('DELETE FROM webhook_events WHERE received_at < ?').run(cutoff);
+      if (Number(r.changes) > 0) ctx.log.info(`pruned ${r.changes} webhook events older than ${WEBHOOK_RETENTION_DAYS} days`);
+    }
+  };
+}
+
 interface RunningJob {
   spec: JobSpec;
   timer?: NodeJS.Timeout;
@@ -53,6 +68,7 @@ export async function runDaemon(argv: string[]): Promise<number> {
 
     registerAll(ctx);
     registerJob(tokenRefreshJob());
+    registerJob(webhookPruneJob());
 
     lease = acquireLease(ctx.storage.db);
     if (!lease) {

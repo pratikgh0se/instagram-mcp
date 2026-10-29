@@ -4,6 +4,7 @@ import https from 'node:https';
 import { AppError } from '../errors.js';
 import { redact } from '../redact.js';
 import type { LoginPath } from '../config/index.js';
+import { checkUrlOverride } from '../config/load.js';
 import { mapMetaError, type MetaErrorBody } from './errors.js';
 
 /**
@@ -24,7 +25,7 @@ export interface RuploadClient {
 }
 
 export function ruploadBaseUrl(version: string, env: NodeJS.ProcessEnv = process.env): string {
-  const host = env.INSTAGRAM_MCP_RUPLOAD_URL?.trim().replace(/\/+$/, '') || 'https://rupload.facebook.com';
+  const host = checkUrlOverride('INSTAGRAM_MCP_RUPLOAD_URL', env.INSTAGRAM_MCP_RUPLOAD_URL, env)?.replace(/\/+$/, '') || 'https://rupload.facebook.com';
   return `${host}/ig-api-upload/${version}`;
 }
 

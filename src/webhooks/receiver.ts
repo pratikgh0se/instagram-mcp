@@ -5,9 +5,7 @@ import { listAccounts } from '../config/index.js';
 import { errorMessage, registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
 
-const MAX_BODY_BYTES = 1024 * 1024;
-
-class TooLarge extends Error {}
+import { BodyTooLarge, MAX_BODY_BYTES, readBodyLimited, respondTooLarge } from '../transports/limits.js';
 
 function text(res: ServerResponse, status: number, body: string): void {
   res.writeHead(status, { 'content-type': 'text/plain', 'content-length': Buffer.byteLength(body) });
@@ -27,18 +25,6 @@ export function verifySignature(rawBody: Buffer, header: string | undefined, app
   if (!m) return false;
   const expected = createHmac('sha256', appSecret).update(rawBody).digest();
   return timingSafeEqual(expected, Buffer.from(m[1]!, 'hex'));
-}
-
-async function readBody(req: IncomingMessage): Promise<Buffer> {
-  if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) throw new TooLarge();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw new TooLarge();
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks);
 }
 
 /** Canonical JSON: object keys sorted recursively. */
@@ -127,32 +113,40 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
   return async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET') {
-      const verifyToken = await ctx.secrets.get(GLOBAL_SCOPE, 'webhook_verify_token');
-      registerSecret(verifyToken);
+      // Cheap checks first: nothing below touches the secret store unless the handshake is well formed.
       const mode = url.searchParams.get('hub.mode');
       const given = url.searchParams.get('hub.verify_token');
       const challenge = url.searchParams.get('hub.challenge');
-      if (mode !== 'subscribe' || !verifyToken || given === null || !safeEqual(given, verifyToken)) return text(res, 403, 'Forbidden');
+      if (mode !== 'subscribe' || given === null) return text(res, 403, 'Forbidden');
+      const verifyToken = await ctx.secrets.get(GLOBAL_SCOPE, 'webhook_verify_token');
+      registerSecret(verifyToken);
+      if (!verifyToken || !safeEqual(given, verifyToken)) return text(res, 403, 'Forbidden');
       if (challenge === null) return text(res, 400, 'Missing hub.challenge');
       return text(res, 200, challenge);
     }
     if (req.method === 'POST') {
+      // Cheap checks first (size, signature header shape); secrets come from the in-memory cache afterwards.
+      if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) return respondTooLarge(req, res, 'Payload too large', 'text/plain');
+      const sigHeader = req.headers['x-hub-signature-256'];
+      const sig = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+      if (!/^sha256=[0-9a-fA-F]{64}$/.test(sig ?? '')) {
+        req.resume();
+        return text(res, 401, 'Invalid signature');
+      }
       const appSecret = await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret');
-      if (!appSecret) return text(res, 503, 'Webhook receiver is not configured (no app secret)');
+      if (!appSecret) {
+        req.resume();
+        return text(res, 503, 'Webhook receiver is not configured (no app secret)');
+      }
       registerSecret(appSecret);
       let raw: Buffer;
       try {
-        raw = await readBody(req);
+        raw = await readBodyLimited(req);
       } catch (error) {
-        if (error instanceof TooLarge) {
-          res.writeHead(413, { 'content-type': 'text/plain', connection: 'close' });
-          res.end('Payload too large');
-          return;
-        }
+        if (error instanceof BodyTooLarge) return respondTooLarge(req, res, 'Payload too large', 'text/plain');
         throw error;
       }
-      const sig = req.headers['x-hub-signature-256'];
-      if (!verifySignature(raw, Array.isArray(sig) ? sig[0] : sig, appSecret)) return text(res, 401, 'Invalid signature');
+      if (!verifySignature(raw, sig, appSecret)) return text(res, 401, 'Invalid signature');
       let body: unknown;
       try {
         body = JSON.parse(raw.toString('utf8'));
