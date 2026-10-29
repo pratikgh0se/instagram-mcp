@@ -7,7 +7,7 @@ import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { acquireLease } from '../daemon/lease.js';
 import { listJobs } from '../safety/registry.js';
-import { runHttp } from '../transports/http.js';
+import { resolveHttpHost, runHttp } from '../transports/http.js';
 import { runStdio } from '../transports/stdio.js';
 import { registerAll, packageVersion } from '../server.js';
 import { checkTokenValidity, printDoctor, runDoctorChecks } from './doctor.js';
@@ -34,7 +34,7 @@ export async function serve(argv: string[]): Promise<number> {
   if (values.http) {
     const port = values.port !== undefined ? Number(values.port) : ctx.config.http.port;
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw usage('--port must be an integer 0-65535.');
-    await runHttp(ctx, { host: values.host ?? ctx.config.http.host, port });
+    await runHttp(ctx, { host: resolveHttpHost(ctx.config.http.host, values.host), port });
   } else {
     await runStdio(ctx);
   }
@@ -141,7 +141,7 @@ export async function accounts(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: rest,
     options: {
-      alias: { type: 'string' }, login: { type: 'string' }, 'ig-user-id': { type: 'string' }, 'page-id': { type: 'string' },
+      alias: { type: 'string' }, login: { type: 'string' }, 'ig-user-id': { type: 'string' }, 'page-id': { type: 'string' }, 'app-id': { type: 'string' },
       default: { type: 'boolean' }, 'keep-secrets': { type: 'boolean' }
     },
     allowPositionals: false
@@ -160,6 +160,7 @@ export async function accounts(argv: string[]): Promise<number> {
       if (entry.data.login === 'facebook' && !entry.data.page_id) throw usage('The facebook login path needs --page-id.');
       if (config.accounts.some((a) => a.alias === entry.data.alias)) throw usage(`Account "${entry.data.alias}" already exists.`);
       config.accounts.push(entry.data);
+      if (values['app-id']) config.app.app_id = values['app-id'].trim();
       if (values.default || config.accounts.length === 1) config.default_account = entry.data.alias;
       saveConfig(paths, config);
       out(`Added account "${entry.data.alias}". Next: instagram-mcp auth set-token --account ${entry.data.alias}`);
@@ -185,8 +186,25 @@ export async function accounts(argv: string[]): Promise<number> {
       return 0;
     }
     default:
-      throw usage('Usage: instagram-mcp accounts add|list|remove');
+      throw usage('Usage: instagram-mcp accounts add|list|remove  (add: --alias <n> --login instagram|facebook [--ig-user-id <id>] [--page-id <id>] [--app-id <id>] [--default])');
   }
+}
+
+// ---------- app ----------
+/** `instagram-mcp app set --app-id <id>`: writes config `app.app_id` (used by the facebook-path token exchange). */
+export async function app(argv: string[]): Promise<number> {
+  const [sub, ...rest] = argv;
+  const { values } = parseArgs({ args: rest, options: { 'app-id': { type: 'string' } }, allowPositionals: false });
+  if (sub !== 'set') throw usage('Usage: instagram-mcp app set --app-id <id>');
+  const appId = values['app-id']?.trim();
+  if (!appId) throw usage('app set needs --app-id <id>.');
+  if (!/^\d{5,32}$/.test(appId)) throw usage('--app-id must be the numeric App ID from the Meta app dashboard.');
+  const paths = buildPaths(undefined);
+  const config = loadConfig(paths);
+  config.app.app_id = appId;
+  saveConfig(paths, config);
+  out(`Saved app.app_id ${appId} to ${paths.configPath}.`);
+  return 0;
 }
 
 // ---------- http-token ----------

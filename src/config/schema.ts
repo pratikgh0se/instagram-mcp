@@ -22,6 +22,11 @@ export type SecretsBackend = z.infer<typeof secretsBackendSchema>;
 
 export const defaultBackend = (): SecretsBackend => (process.platform === 'darwin' ? 'keychain' : 'encrypted-file');
 
+const isLoopback = (host: string): boolean => {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+  return h === 'localhost' || h === '::1' || h === '::ffff:127.0.0.1' || /^127\.\d+\.\d+\.\d+$/.test(h);
+};
+
 export const configSchema = z.strictObject({
   graph_api_version: z.string().regex(/^v\d+\.\d+$/).default('v26.0'),
   default_account: z.string().nullish(),
@@ -38,7 +43,12 @@ export const configSchema = z.strictObject({
     })
     .default({ read_only: false, dry_run: false, disabled_actions: [], approval_ttl_seconds: 600, allow_human_agent_tag: false }),
   media_host: z
-    .object({ public_base_url: z.string().url().nullish().transform((v) => (v ? v.replace(/\/+$/, '') : v)), port: z.number().int().min(1).max(65535).default(8766) })
+    .object({ public_base_url: z
+        .string()
+        .url()
+        .refine((v) => /^https?:\/\//i.test(v), 'must be an http(s) URL')
+        .nullish()
+        .transform((v) => (v ? v.replace(/\/+$/, '') : v)), port: z.number().int().min(1).max(65535).default(8766) })
     .default({ public_base_url: null, port: 8766 }),
   http: z
     .object({
@@ -61,6 +71,10 @@ export const configSchema = z.strictObject({
   snapshots: z.object({ daily_hour_local: z.number().int().min(0).max(23).default(6) }).default({ daily_hour_local: 6 }),
   token_in_header: z.boolean().default(false),
   downloads_dir: z.string().nullish()
+}).superRefine((c, ctx) => {
+  if (!c.http.allow_remote && !isLoopback(c.http.host)) {
+    ctx.addIssue({ code: 'custom', path: ['http', 'host'], message: 'must be a loopback address unless http.allow_remote is true' });
+  }
 });
 
 export type Config = z.infer<typeof configSchema>;

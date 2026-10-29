@@ -3,7 +3,7 @@ import type { AppContext } from '../../context.js';
 import { AppError } from '../../errors.js';
 import { requireCapability } from '../../graph/capabilities.js';
 import { registerPublishActions, registerPublishJobs, localFingerprint } from '../../publish/actions.js';
-import { mediaRoute, plannedCalls } from '../../publish/plan.js';
+import { plannedCalls } from '../../publish/plan.js';
 import { checkQuota, preparePublish, type PublishInput } from '../../publish/prepare.js';
 import { cancelJob, getJob, JOB_STATUSES, listJobs, type JobRow } from '../../publish/scheduler.js';
 import { assertPolicyAllows, createApproval, type ApprovalTicket } from '../../safety/index.js';
@@ -92,8 +92,7 @@ const preflightPublish = defineTool({
         path: m.path,
         type: m.type,
         bytes: prepared.media[i]?.bytes ?? null,
-        content_type: prepared.media[i]?.content_type ?? null,
-        ...(m.source === 'local' ? { route: mediaRoute(account.login, m) === 'resumable' ? 'resumable_upload' : 'media_host' } : {})
+        content_type: prepared.media[i]?.content_type ?? null
       })),
       scheduled: params.publish_at !== undefined,
       publish_at: params.publish_at ?? null,

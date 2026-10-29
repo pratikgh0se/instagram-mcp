@@ -26,7 +26,7 @@ node dist/cli.js doctor
 
 The user must create the Meta app and token themselves (SETUP.md sections B to D); you cannot do that for them. Ask them to run the two `set-*` commands in their own terminal, or have them pipe the value on stdin. Do not ask them to paste a secret into the chat.
 
-Facebook path: the app id has no CLI flag. Ask the user to set `"app": {"app_id": "<APP_ID>"}` in `config.json` before `auth set-token`.
+Facebook path: set the app id with `node dist/cli.js app set --app-id <APP_ID>` (or `accounts add ... --app-id <APP_ID>`) before `auth set-token`. An Instagram dashboard token that is already long-lived is stored as-is with a short note; `--no-exchange` skips the attempt.
 
 ## Client configuration
 

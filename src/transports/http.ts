@@ -18,6 +18,11 @@ export function isLoopbackHost(host: string): boolean {
   return h === 'localhost' || h === '::1' || h === '::ffff:127.0.0.1' || /^127\.\d+\.\d+\.\d+$/.test(h);
 }
 
+/** Bind host precedence: --host flag, then INSTAGRAM_MCP_HTTP_HOST, then config http.host. allow_remote rules still apply. */
+export function resolveHttpHost(configHost: string, flag?: string, env: NodeJS.ProcessEnv = process.env): string {
+  return flag?.trim() || env.INSTAGRAM_MCP_HTTP_HOST?.trim() || configHost;
+}
+
 export interface HttpOptions {
   host: string;
   port: number;
@@ -97,7 +102,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
     if (name === opts.host.replace(/^\[|\]$/g, '').toLowerCase() && onBoundPort) return true;
     return looseHosts.has(name);
   };
-  const allowedOrigins = new Set(cfg.allowed_origins.map((o) => o.replace(/\/+$/, '').toLowerCase()));
+  const allowedOrigins = new Set(cfg.allowed_origins); // contract 4: exact string equality, no normalisation
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const failures = new Map<string, number[]>();
 
@@ -137,7 +142,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
       return;
     }
     const origin = req.headers.origin;
-    if (origin && !allowedOrigins.has(origin.replace(/\/+$/, '').toLowerCase())) {
+    if (origin !== undefined && !allowedOrigins.has(origin)) {
       sendJson(res, 403, rpcError(-32000, 'Origin not allowed'));
       return;
     }

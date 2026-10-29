@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- CLI: `app set --app-id <id>` and `accounts add --app-id <id>` write `app.app_id`.
+- `INSTAGRAM_MCP_HTTP_HOST` environment override for the HTTP bind host (`allow_remote` rules still apply).
+
+### Changed
+- Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.
+- Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
+
+### Fixed
+- Startup now refuses a non-loopback `http.host` without `http.allow_remote` and a non-http(s) `media_host.public_base_url`, regardless of transport.
+- A successful capability probe is no longer cached; only failures cache `no`.
+- `appsecret_proof` values and the app secret are registered with the redactor, and malformed upstream error bodies are scrubbed.
+- `instagram_get_profile` returns `account_type: null` on the Facebook path.
+- Publish preview media items match the contract exactly (no extra `route` field).
+- `doctor` checks each account's `/me` and quota request before moving on to the next account.
+- HTTP `Origin` must exactly equal an `allowed_origins` entry.
+- Plain-http Graph endpoints send `Connection: close` (avoids ~500 ms keep-alive stalls that starved the container poll loop).
+
 ## [1.0.0-rc.1] - 2026-10-29
 
 Release candidate. The version stays at rc until the live end-to-end run in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md) passes against a real test account.

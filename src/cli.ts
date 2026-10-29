@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { runDaemon } from './daemon/index.js';
-import { accounts, auth, doctor, httpToken, scheduler, serve, version, webhooks } from './cli/commands.js';
+import { accounts, app, auth, doctor, httpToken, scheduler, serve, version, webhooks } from './cli/commands.js';
 import { AppError, isAppError } from './errors.js';
 import { errorMessage } from './redact.js';
 
@@ -14,6 +14,7 @@ async function main(argv: string[]): Promise<number> {
     case 'serve': return serve(rest);
     case 'auth': return auth(rest);
     case 'accounts': return accounts(rest);
+    case 'app': return app(rest);
     case 'http-token': return httpToken(rest);
     case 'doctor': return doctor(rest);
     case 'version': return version();
@@ -21,7 +22,7 @@ async function main(argv: string[]): Promise<number> {
     case 'scheduler': return scheduler(rest);
     case 'webhooks': return webhooks(rest);
     default:
-      throw new AppError('INVALID_INPUT', `Unknown command "${first}". Commands: serve, daemon, scheduler, webhooks, auth, accounts, http-token, doctor, version.`);
+      throw new AppError('INVALID_INPUT', `Unknown command "${first}". Commands: serve, daemon, scheduler, webhooks, auth, accounts, app, http-token, doctor, version.`);
   }
 }
 

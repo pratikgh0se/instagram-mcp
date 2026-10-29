@@ -75,7 +75,7 @@ npm run build
 # Optional: put the CLI on your PATH. Otherwise use `node dist/cli.js` wherever this README says `instagram-mcp`.
 npm link
 
-instagram-mcp accounts add --alias main --login instagram      # facebook path: --login facebook --page-id <PAGE_ID>
+instagram-mcp accounts add --alias main --login instagram      # facebook path: --login facebook --page-id <PAGE_ID> --app-id <APP_ID>
 instagram-mcp auth set-token --account main                    # paste the token (hidden prompt) or pipe it on stdin
 instagram-mcp doctor
 ```
@@ -116,7 +116,7 @@ instagram-mcp serve --http --port 8765
 claude mcp add --transport http instagram http://127.0.0.1:8765/mcp --header "Authorization: Bearer <TOKEN>"
 ```
 
-The server refuses to start in HTTP mode without a stored bearer, and refuses a non-loopback bind unless `http.allow_remote` is true.
+The server refuses to start in HTTP mode without a stored bearer, and refuses a non-loopback bind unless `http.allow_remote` is true. `INSTAGRAM_MCP_HTTP_HOST` overrides `http.host` (the `--host` flag wins over both); the `allow_remote` rule applies to the effective host.
 
 Tip: set your client to ask before running `instagram_approve` and let everything else run. That one tool is the only one that changes Instagram.
 

@@ -191,15 +191,15 @@ Requires Node.js 22.13 or newer (`node --version`).
    instagram-mcp accounts add --alias test --login facebook --page-id <PAGE_ID>
    ```
 
-   You should see: `Added account "test". Next: instagram-mcp auth set-token --account test`. The config file is `~/.instagram-mcp/config.json` (mode 0600).
+   (Facebook Login: add `--app-id <APP_ID>` here to set the app id in the same step, see step 3.) You should see: `Added account "test". Next: instagram-mcp auth set-token --account test`. The config file is `~/.instagram-mcp/config.json` (mode 0600).
 
-3. Facebook Login only: set the app id in the config. There is no command for it yet; edit `~/.instagram-mcp/config.json` and set:
+3. Facebook Login only: set the app id in the config (it is used for the long-lived token exchange):
 
-   ```json
-   "app": { "app_id": "<APP_ID>" }
+   ```sh
+   instagram-mcp app set --app-id <APP_ID>
    ```
 
-   Keep the file valid JSON. Instagram Login does not need this.
+   You can also pass `--app-id <APP_ID>` to `accounts add` in step 2. This writes `"app": { "app_id": "..." }` to `~/.instagram-mcp/config.json`. Instagram Login does not need this.
 
 4. Store the app secret (recommended for both paths; required for the Facebook path exchange, webhooks and `appsecret_proof`).
 
@@ -258,7 +258,7 @@ Instagram Login tokens last 60 days. The daemon (section G) refreshes them daily
 
 ## F. Optional: media host for local files (Cloudflare Tunnel)
 
-Instagram downloads media from a public HTTPS URL. If you give the server a local file path, it stages a copy under an unguessable token and serves it from a small local web server on port 8766. You need a public hostname that tunnels to it. Skip this section if you only publish from URLs, or (Facebook Login) only upload local videos, which use resumable upload instead.
+Instagram downloads media from a public HTTPS URL. If you give the server a local file path, it stages a copy under an unguessable token and serves it from a small local web server on port 8766. If the daemon (or another server instance with the same `INSTAGRAM_MCP_HOME`) already owns that port, the second instance reuses it, because both read the same staging directory. You need a public hostname that tunnels to it. Skip this section if you only publish from URLs, or (Facebook Login) only upload local videos, which use resumable upload instead.
 
 You need a domain on Cloudflare and the `cloudflared` tool (`brew install cloudflared`).
 
@@ -368,7 +368,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | Meta code 9007 or 2207xxx (`UPSTREAM_REJECTED`) | Media rejected (format, size, aspect, not ready) | Read the Meta message in the error; use JPEG for images, MP4 or MOV for video |
 | `MESSAGING_WINDOW_CLOSED` (code 10 / 2534022) | Over 24 hours since the user's last message | Have the person message the account again |
 | `CAPABILITY_UNAVAILABLE` | Feature not available on this login path | Follow the `action` (it names the other path) |
-| `MEDIA_HOST_UNAVAILABLE` | `media_host.public_base_url` unset or port 8766 busy | Section F |
+| `MEDIA_HOST_UNAVAILABLE` | `media_host.public_base_url` unset or port 8766 busy (a second instance with the same state dir, such as the daemon, is fine and shares the port) | Section F |
 | `OUTCOME_UNKNOWN` | Publish response lost | Do not retry; call `instagram_get_operation` with the approval id |
 | `POLICY_DENIED` | `read_only` or `disabled_actions` | Change `policy` in the config |
 | `APPROVAL_EXPIRED` | Approval older than the TTL | Run the preflight again |

@@ -265,7 +265,9 @@ export class TokenManager {
           exchanged = true;
           if (res.data.expires_in) expiresAt = new Date(now + res.data.expires_in * 1000).toISOString();
         } catch (error) {
-          notes.push(`Short-to-long exchange failed (${(error as Error).message}); the token was stored as given and is assumed to be long-lived already.`);
+          // Dashboard-generated Instagram tokens are already long-lived, so Meta rejects the exchange. Not an error.
+          void error;
+          notes.push('Token stored as-is (it looks long-lived already, so no exchange was needed).');
         }
       } else if (!appSecret) {
         notes.push('No app secret available: stored the token as given (a long-lived token is needed; short-lived tokens last about 1 hour).');

@@ -20,8 +20,10 @@ export const TRANSIENT_CODES = new Set([1, 2, 4, 17, 32, 613, 80002]);
 export function mapMetaError(status: number, error: MetaErrorBody | undefined, opts: { write?: boolean } = {}): AppError {
   const code = error?.code;
   const sub = error?.error_subcode;
-  const text = redact(error?.message || error?.error_user_msg || `Meta API returned HTTP ${status}`);
-  const details: Record<string, unknown> = { meta: { code, subcode: sub, fbtrace_id: error?.fbtrace_id, http_status: status } };
+  // Upstream bodies are hostile input: coerce to string and scrub before anything else sees them.
+  const rawText = [error?.message, error?.error_user_msg].find((v) => typeof v === 'string' && v.length > 0) as string | undefined;
+  const text = redact(rawText ?? `Meta API returned HTTP ${status}`);
+  const details: Record<string, unknown> = { meta: { code, subcode: sub, fbtrace_id: typeof error?.fbtrace_id === 'string' ? redact(error.fbtrace_id) : undefined, http_status: status } };
   const mk = (c: ErrorCode, extra: { action?: string; retryable?: boolean } = {}): AppError => new AppError(c, text, { details, ...extra });
   const reauth = 'Re-authenticate: run `instagram-mcp auth set-token --account <alias>` with a fresh token.';
 

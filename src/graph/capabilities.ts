@@ -82,9 +82,8 @@ export async function withProbe<T>(ctx: AppContext, account: ResolvedAccount, fe
   requireCapability(ctx, account, feature);
   const isProbe = staticSupport(feature, account.login) === 'probe';
   try {
-    const out = await fn();
-    if (isProbe) ctx.storage.capabilityCache.set(account.alias, feature, 'yes', null, ctx.clock.nowIso());
-    return out;
+    // A successful probe is deliberately NOT cached (contract 1.12): only failures cache `no`.
+    return await fn();
   } catch (error) {
     if (isProbe && looksUnsupported(error)) {
       const reason = (error as AppError).message;

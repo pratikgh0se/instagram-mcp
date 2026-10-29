@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import type { ResolvedAccount } from '../../config/index.js';
 import { AppError } from '../../errors.js';
-import { registerCapability, requireCapability, withProbe } from '../../graph/capabilities.js';
+import { requireCapability, withProbe } from '../../graph/capabilities.js';
 import type { GraphClient } from '../../graph/client.js';
 import { createApproval, type PlannedCall } from '../../safety/approvals.js';
 import { registerAction } from '../../safety/registry.js';
@@ -10,10 +10,6 @@ import { DAY_MS, dmBase, gatePreflight, idParam, isRecord, ownId, str, tsMs, wit
 import { assertRemoteMediaUrl } from '../../engagement/url.js';
 import { accountParam, cursorParam } from '../shared.js';
 import { defineTool, ok, READ_ONLY, type ToolDef } from '../types.js';
-
-// Contract D11: messaging is `probe` on the facebook path (Messenger Platform on the Page).
-// Registered at module load so every code path (CLI, doctor, list_accounts) sees it.
-registerCapability('messaging', { description: 'Direct messaging', instagram: 'yes', facebook: 'probe' });
 
 const WINDOW_MS = 24 * 3_600_000;
 const HUMAN_AGENT_MS = 7 * DAY_MS;
@@ -336,8 +332,6 @@ const preflightSetMessagingProfile = defineTool({
 export const tools: ToolDef[] = [listConversations, getConversation, preflightSendMessage, preflightSetMessagingProfile];
 
 export function register(_ctx: AppContext): void {
-  registerCapability('messaging', { description: 'Direct messaging', instagram: 'yes', facebook: 'probe' });
-
   registerAction<SendParams>({
     name: 'send_message',
     capability: 'messaging',

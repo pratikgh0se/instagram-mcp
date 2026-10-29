@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, rmSync, statSync } from 'node:fs';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { AppContext } from '../context.js';
@@ -182,8 +182,32 @@ function plain(res: ServerResponse, status: number, headers: Record<string, stri
   res.end();
 }
 
+/** Header carrying a hash of the staging dir path: lets a second instance sharing INSTAGRAM_MCP_HOME recognise the port owner. */
+export const HOST_MARKER_HEADER = 'x-instagram-mcp-media-host';
+
+export function hostMarker(ctx: AppContext): string {
+  return createHash('sha256').update(ctx.paths.stagingDir).digest('hex').slice(0, 16);
+}
+
+/** True when 127.0.0.1:port is answered by an instagram-mcp media host using the same staging dir. */
+function probeSameHost(ctx: AppContext): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = httpRequest(
+      { host: '127.0.0.1', port: ctx.config.media_host.port, path: '/m/__health', method: 'GET', timeout: 2000 },
+      (res) => {
+        res.resume();
+        resolve(res.headers[HOST_MARKER_HEADER] === hostMarker(ctx));
+      }
+    );
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(false));
+    req.end();
+  });
+}
+
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const ctx = host!.ctx;
+  res.setHeader(HOST_MARKER_HEADER, hostMarker(ctx));
   try {
     const rawPath = (req.url ?? '').split('?')[0] ?? '';
     const match = PATH_RE.exec(rawPath);
@@ -232,6 +256,14 @@ export async function ensureMediaHost(ctx: AppContext): Promise<void> {
     const server = createServer(handle);
     server.once('error', (error: NodeJS.ErrnoException) => {
       starting = undefined;
+      if (error.code === 'EADDRINUSE') {
+        // Another instance (e.g. the daemon) with the same state dir may own the port; it serves the same staged files.
+        void probeSameHost(ctx).then((same) => {
+          if (same) resolve();
+          else reject(mediaHostUnavailable(`The media host could not bind 127.0.0.1:${ctx.config.media_host.port} (EADDRINUSE, and the port is not served by this server's state dir).`));
+        });
+        return;
+      }
       reject(mediaHostUnavailable(`The media host could not bind 127.0.0.1:${ctx.config.media_host.port} (${error.code ?? errorMessage(error)}).`));
     });
     server.listen(ctx.config.media_host.port, '127.0.0.1', () => {

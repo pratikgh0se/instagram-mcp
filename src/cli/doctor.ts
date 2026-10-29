@@ -53,10 +53,18 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
     out.push(check('tokens', 'fail', `Missing token for: ${missingAliases.join(', ')}.`, `Run: instagram-mcp auth set-token --account ${missingAliases[0]}`));
   } else out.push(check('tokens', 'pass', 'Every account has a token.'));
 
+  // Contract 3.3: per account (config order) `/me` then the quota request, then the next account.
   const bad: string[] = [];
+  const quotaFailures: string[] = [];
   for (const a of withToken) {
     const r = await checkTokenValidity(ctx, a);
     if (!r.ok) bad.push(r.message);
+    try {
+      const graph = ctx.graph(a);
+      await graph.get(`/${await graph.igUserId()}/content_publishing_limit`, { fields: 'quota_usage,config' });
+    } catch (error) {
+      quotaFailures.push(`${a.alias}: ${errorMessage(error)}`);
+    }
   }
   if (withToken.length === 0) out.push(check('token_validity', 'warn', 'Skipped: no account has a token.'));
   else if (bad.length) out.push(check('token_validity', 'fail', bad.join(' | '), 'Re-authenticate: instagram-mcp auth set-token --account <alias>'));
@@ -67,15 +75,6 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
     return `${a.alias}: ${Object.entries(m).map(([k, v]) => `${k}=${v}`).join(' ')}`;
   }).join(' | ') || 'No accounts.'));
 
-  const quotaFailures: string[] = [];
-  for (const a of withToken) {
-    try {
-      const graph = ctx.graph(a);
-      await graph.get(`/${await graph.igUserId()}/content_publishing_limit`, { fields: 'quota_usage,config' });
-    } catch (error) {
-      quotaFailures.push(`${a.alias}: ${errorMessage(error)}`);
-    }
-  }
   if (withToken.length === 0) out.push(check('quota', 'warn', 'Skipped: no account has a token.'));
   else out.push(quotaFailures.length ? check('quota', 'warn', quotaFailures.join(' | ')) : check('quota', 'pass', 'content_publishing_limit succeeded.'));
 

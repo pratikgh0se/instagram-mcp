@@ -5,7 +5,7 @@ import { AppError } from '../errors.js';
 import { errorMessage } from '../redact.js';
 import { listJobs, registerJob, type JobSpec } from '../safety/registry.js';
 import { registerAll } from '../server.js';
-import { startHttpServer, type HttpHandle } from '../transports/http.js';
+import { resolveHttpHost, startHttpServer, type HttpHandle } from '../transports/http.js';
 import { createWebhookHandler } from '../webhooks/receiver.js';
 import { acquireLease, LEASE_RENEW_MS, type LeaseHandle } from './lease.js';
 
@@ -65,7 +65,7 @@ export async function runDaemon(argv: string[]): Promise<number> {
     const webhooksOn = ctx.config.webhooks.enabled;
     if (wantMcp || webhooksOn) {
       handle = await startHttpServer(ctx, {
-        host: values.host ?? ctx.config.http.host,
+        host: resolveHttpHost(ctx.config.http.host, values.host),
         port,
         mcp: wantMcp,
         exemptRoutes: webhooksOn ? { paths: [ctx.config.webhooks.path], handler: createWebhookHandler(ctx) } : undefined

@@ -59,7 +59,7 @@ const getProfile = defineTool({
     const data = {
       id: pick('id'), username: pick('username'), name: pick('name'), biography: pick('biography'), website: pick('website'),
       followers_count: pick('followers_count'), follows_count: pick('follows_count'), media_count: pick('media_count'),
-      profile_picture_url: pick('profile_picture_url'), account_type: pick('account_type')
+      profile_picture_url: pick('profile_picture_url'), account_type: account.login === 'instagram' ? pick('account_type') : null
     };
     return ok(data, `@${String(data.username ?? account.alias)}: ${data.followers_count ?? '?'} followers, ${data.media_count ?? '?'} posts.`);
   }

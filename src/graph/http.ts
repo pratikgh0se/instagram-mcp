@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { AppError } from '../errors.js';
-import { redact } from '../redact.js';
+import { redact, registerSecret } from '../redact.js';
 import type { LoginPath } from '../config/schema.js';
 import { mapMetaError, TRANSIENT_CODES, type MetaErrorBody } from './errors.js';
 
@@ -133,13 +133,23 @@ export class GraphHttp {
       if (v !== undefined && v !== null) url.searchParams.set(k, encode(v));
     }
     if (req.token && req.tokenPlacement !== 'header') url.searchParams.set('access_token', req.token);
-    if (req.token && req.appSecret) url.searchParams.set('appsecret_proof', appSecretProof(req.token, req.appSecret));
+    if (req.token) registerSecret(req.token);
+    if (req.appSecret) registerSecret(req.appSecret);
+    if (req.token && req.appSecret) {
+      const proof = appSecretProof(req.token, req.appSecret);
+      // Meta may echo the proof or the secret in an error body: scrub both everywhere.
+      registerSecret(proof);
+      url.searchParams.set('appsecret_proof', proof);
+    }
     return url;
   }
 
   private async once<T>(req: GraphRequest, method: string, isWrite: boolean, setRetryAfter: (ms: number | undefined) => void): Promise<GraphResponse<T>> {
     const url = this.buildUrl(req);
     const headers: Record<string, string> = { accept: 'application/json' };
+    // Plain-http endpoints (env overrides, local fakes): a reused keep-alive socket can stall ~500 ms per request after a
+    // short idle gap (observed with Node's fetch against node:http servers), which starves tight poll loops. https keeps pooling.
+    if (url.protocol === 'http:') headers.connection = 'close';
     if (req.token && req.tokenPlacement === 'header') headers.authorization = `Bearer ${req.token}`;
     let body: string | undefined;
     if (req.body) {
