@@ -56,7 +56,8 @@ export function listActions(): ActionSpec[] {
 export interface JobSpec {
   name: string;
   intervalMs: number;
-  run(ctx: AppContext): Promise<void>;
+  /** May return a value (the scheduler job returns `{ jobs }` for `scheduler run-once`). */
+  run(ctx: AppContext): Promise<unknown>;
 }
 
 const jobs = new Map<string, JobSpec>();
