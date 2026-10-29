@@ -8,11 +8,13 @@ import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { runHttp } from '../transports/http.js';
 import { runStdio } from '../transports/stdio.js';
 import { registerAll, packageVersion } from '../server.js';
-import { runDoctor } from './doctor.js';
+import { checkTokenValidity, printDoctor, runDoctorChecks } from './doctor.js';
+import { envTokenName } from '../secrets/index.js';
+import { errorMessage } from '../redact.js';
 import { readSecret } from './secret-input.js';
 
 const out = (line: string): void => void process.stdout.write(line + '\n');
-const json = (value: unknown): void => out(JSON.stringify(value, null, 2));
+const json = (value: unknown): void => out(JSON.stringify(value));
 
 function usage(message: string): AppError {
   return new AppError('INVALID_INPUT', message);
@@ -86,14 +88,29 @@ export async function auth(argv: string[]): Promise<number> {
       case 'status': {
         const accounts = values.account ? [ctx.account(values.account)] : listAccounts(ctx.config);
         const rows = [];
-        for (const a of accounts) rows.push(await ctx.auth.status(a));
-        if (values.json) json(rows);
-        else for (const r of rows) {
-          out(`${r.alias} (${r.login}): token ${r.has_token ? 'present' : 'MISSING'} [${r.backend}]` +
-            `${r.expires_at ? `, expires ${r.expires_at} (${r.days_remaining} d)${r.expired ? ' EXPIRED' : ''}` : ''}` +
-            `${r.scopes ? `, scopes ${r.scopes.join(',')}` : ''}`);
+        let allGood = true;
+        for (const a of accounts) {
+          const s = await ctx.auth.status(a);
+          const envVar = envTokenName(a.alias);
+          const fromEnv = Boolean(process.env[envVar]?.trim());
+          const present = s.has_token || fromEnv;
+          let valid: boolean | null = null;
+          if (values.check && present) valid = (await checkTokenValidity(ctx, a)).ok;
+          if (!present || valid === false || (!fromEnv && s.expired)) allGood = false;
+          rows.push({
+            alias: a.alias, login: a.login, ig_user_id: a.ig_user_id,
+            token: { present, source: fromEnv ? 'env' : s.backend, env_var: envVar, expires_at: s.expires_at, scopes: s.scopes },
+            valid
+          });
         }
-        return rows.some((r) => !r.has_token || r.expired) ? 1 : 0;
+        const has = async (kind: 'app_secret' | 'http_bearer' | 'webhook_verify_token'): Promise<{ present: boolean }> => ({
+          present: Boolean(await ctx.secrets.get(GLOBAL_SCOPE, kind).catch(() => undefined))
+        });
+        json({
+          backend: ctx.secrets.backend, accounts: rows,
+          app_secret: await has('app_secret'), http_bearer: await has('http_bearer'), webhook_verify_token: await has('webhook_verify_token')
+        });
+        return allGood ? 0 : 1;
       }
       case 'refresh': {
         const account = accountArg(ctx, values.account);
@@ -187,10 +204,18 @@ export async function httpToken(argv: string[]): Promise<number> {
 }
 
 // ---------- doctor / version ----------
-export async function doctor(): Promise<number> {
-  const ctx = createContext({ mode: 'cli' });
+export async function doctor(argv: string[]): Promise<number> {
+  const asJson = argv.includes('--json');
+  let ctx: AppContext;
   try {
-    return await runDoctor(ctx);
+    ctx = createContext({ mode: 'cli' });
+  } catch (error) {
+    // Unreadable/invalid/world-writable config: report only the config check, exit 2.
+    printDoctor([{ id: 'config', status: 'fail', message: errorMessage(error), ...(error instanceof AppError && error.action ? { action: error.action } : {}) }], asJson);
+    return 2;
+  }
+  try {
+    return printDoctor(await runDoctorChecks(ctx), asJson);
   } finally {
     ctx.close();
   }

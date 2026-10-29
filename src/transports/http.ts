@@ -10,7 +10,7 @@ import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { buildServer } from '../server.js';
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const AUTH_FAIL_LIMIT = 10;
+const AUTH_FAIL_LIMIT = 20;
 const AUTH_FAIL_WINDOW_MS = 60_000;
 
 export function isLoopbackHost(host: string): boolean {
@@ -78,7 +78,20 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
   registerSecret(bearer);
   const expected = sha(bearer);
 
-  const allowedHosts = new Set(['127.0.0.1', 'localhost', '::1', opts.host.replace(/^\[|\]$/g, '').toLowerCase(), ...cfg.allowed_hosts.map((h) => h.toLowerCase())]);
+  // Host must be a loopback name on the bound port, the bound host, or the host part of an allowed origin / allowed_hosts entry.
+  let boundPort = 0;
+  const looseHosts = new Set<string>(cfg.allowed_hosts.map((h) => h.toLowerCase()));
+  for (const o of cfg.allowed_origins) {
+    try { looseHosts.add(new URL(o).hostname.toLowerCase().replace(/^\[|\]$/g, '')); } catch { /* ignore malformed entry */ }
+  }
+  const hostAllowed = (hostHeader: string): boolean => {
+    const name = hostnameOf(hostHeader);
+    const portPart = hostHeader.startsWith('[') ? hostHeader.slice(hostHeader.indexOf(']') + 1).replace(/^:/, '') : (hostHeader.split(':')[1] ?? '');
+    const onBoundPort = portPart === String(boundPort);
+    if (['127.0.0.1', 'localhost', '::1'].includes(name) && onBoundPort) return true;
+    if (name === opts.host.replace(/^\[|\]$/g, '').toLowerCase() && onBoundPort) return true;
+    return looseHosts.has(name);
+  };
   const allowedOrigins = new Set(cfg.allowed_origins.map((o) => o.replace(/\/+$/, '').toLowerCase()));
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const failures = new Map<string, number[]>();
@@ -97,9 +110,13 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const ip = req.socket.remoteAddress ?? 'unknown';
-    // DNS-rebinding protection.
+    // Order (contract section 4): body size, Host (DNS-rebinding), Origin, bearer.
+    if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
+      sendJson(res, 413, rpcError(-32000, 'Request body too large (1 MB limit)'), { connection: 'close' });
+      return;
+    }
     const host = req.headers.host;
-    if (!host || !allowedHosts.has(hostnameOf(host))) {
+    if (!host || !hostAllowed(host)) {
       sendJson(res, 403, rpcError(-32000, 'Host not allowed'));
       return;
     }
@@ -113,15 +130,19 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
 
     if (!open) {
       if (recentFailures(ip) >= AUTH_FAIL_LIMIT) {
-        sendJson(res, 429, rpcError(-32000, 'Too many failed authentication attempts'), { 'retry-after': String(AUTH_FAIL_WINDOW_MS / 1000) });
-        return;
+        // Only requests that also fail authentication get 429; a valid bearer is unaffected (contract section 4).
+        const hdr = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
+        if (!hdr || !timingSafeEqual(sha(hdr[1]!.trim()), expected)) {
+          sendJson(res, 429, { error: { code: 'RATE_LIMITED', message: 'Too many failed authentication attempts.' } }, { 'retry-after': String(AUTH_FAIL_WINDOW_MS / 1000) });
+          return;
+        }
       }
       const header = req.headers.authorization ?? '';
       const m = /^Bearer\s+(.+)$/i.exec(header);
       const valid = m ? timingSafeEqual(sha(m[1]!.trim()), expected) : false;
       if (!valid) {
         failures.get(ip)!.push(Date.now());
-        sendJson(res, 401, rpcError(-32001, 'Unauthorized'), { 'www-authenticate': 'Bearer' });
+        sendJson(res, 401, { error: { code: m ? 'AUTH_FAILED' : 'AUTH_REQUIRED', message: m ? 'Invalid bearer token.' : 'Missing bearer token.' } }, { 'www-authenticate': 'Bearer' });
         return;
       }
     }
@@ -190,6 +211,7 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
     server.listen(opts.port, opts.host, () => resolve());
   });
   const port = (server.address() as AddressInfo).port;
+  boundPort = port;
   process.stderr.write(JSON.stringify({ event: 'listening', host: opts.host, port, transport: 'http' }) + '\n');
 
   return {

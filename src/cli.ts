@@ -16,7 +16,7 @@ async function main(argv: string[]): Promise<number> {
     case 'auth': return auth(rest);
     case 'accounts': return accounts(rest);
     case 'http-token': return httpToken(rest);
-    case 'doctor': return doctor();
+    case 'doctor': return doctor(rest);
     case 'version': return version();
     default:
       if (NOT_YET.has(first)) {
