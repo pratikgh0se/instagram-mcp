@@ -500,7 +500,7 @@ Approve: ops executed sequentially in input order; a failure never stops the bat
 | `hide` | `POST /{comment_id}` body `hide=true` |
 | `unhide` | `POST /{comment_id}` body `hide=false` |
 | `delete` | `DELETE /{comment_id}` |
-| `private_reply` | `POST /{IG}/messages` body `recipient={"comment_id":"<id>"}`, `message={"text":"<message>"}` -> `{recipient_id, message_id}` |
+| `private_reply` | `POST /{IG}/messages` (facebook path: `/{page_id}/messages`, see the 2.5 path rule) body `recipient={"comment_id":"<id>"}`, `message={"text":"<message>"}` -> `{recipient_id, message_id}` |
 
 Item `result` = Meta's success payload fields (`{id}`, `{success:true}`, `{recipient_id,message_id}`). A network error/5xx on an item write -> item `unknown` with `OUTCOME_UNKNOWN`, `details.reconcile = {operation_id, index}`. Overall `status`: any `unknown` item -> `unknown`; else any `failed` -> `failed` (top-level `error` = error of the first failed item); else `succeeded`. Top-level `result = { total, succeeded, failed, unknown }` (present for every overall status); `items` is always present. `isError` follows the overall status (1.13.3).
 
