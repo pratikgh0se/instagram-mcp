@@ -5,6 +5,8 @@ import { createContext, type AppContext } from '../context.js';
 import { AppError } from '../errors.js';
 import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
+import { acquireLease } from '../daemon/lease.js';
+import { listJobs } from '../safety/registry.js';
 import { runHttp } from '../transports/http.js';
 import { runStdio } from '../transports/stdio.js';
 import { registerAll, packageVersion } from '../server.js';
@@ -224,4 +226,53 @@ export async function doctor(argv: string[]): Promise<number> {
 export function version(): number {
   out(packageVersion());
   return 0;
+}
+
+// ---------- scheduler ----------
+/**
+ * `scheduler run-once`: take the daemon lease (exit 3 when a live daemon/run holds it), register every domain,
+ * run the job named "scheduler" once. The job's `run` may return `{ jobs: [...] }`; it is printed per contract 3.1.
+ */
+export async function scheduler(argv: string[]): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub !== 'run-once') throw usage('Usage: instagram-mcp scheduler run-once');
+  parseArgs({ args: rest, options: {}, allowPositionals: false });
+  const ctx = createContext({ mode: 'cli' });
+  const lease = acquireLease(ctx.storage.db);
+  try {
+    if (!lease) {
+      process.stderr.write('instagram-mcp: another process holds the daemon lease for this INSTAGRAM_MCP_HOME; nothing processed.\n');
+      return 3;
+    }
+    registerAll(ctx);
+    const job = listJobs().find((j) => j.name === 'scheduler');
+    if (!job) {
+      process.stderr.write('instagram-mcp: no "scheduler" job is registered in this build; nothing to run.\n');
+      json({ ok: true, now: ctx.clock.nowIso(), jobs: [] });
+      return 0;
+    }
+    const result = (await job.run(ctx)) as unknown;
+    const jobs = result && typeof result === 'object' && Array.isArray((result as { jobs?: unknown }).jobs) ? (result as { jobs: unknown[] }).jobs : [];
+    json({ ok: true, now: ctx.clock.nowIso(), jobs });
+    return 0;
+  } finally {
+    lease?.release();
+    ctx.close();
+  }
+}
+
+// ---------- webhooks ----------
+export async function webhooks(argv: string[]): Promise<number> {
+  const [sub] = argv;
+  if (sub !== 'set-verify-token') throw usage('Usage: instagram-mcp webhooks set-verify-token (token from stdin or hidden prompt)');
+  const ctx = createContext({ mode: 'cli' });
+  try {
+    const token = await readSecret('Webhook verify token (input hidden): ');
+    registerSecret(token);
+    await ctx.secrets.set(GLOBAL_SCOPE, 'webhook_verify_token', token);
+    out('Webhook verify token stored.');
+    return 0;
+  } finally {
+    ctx.close();
+  }
 }

@@ -75,6 +75,17 @@ export class TokenManager {
     });
   }
 
+  /** Unversioned Instagram host (token exchange/refresh are documented without a version segment). Honors INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM. */
+  private httpUnversioned(account?: string): GraphHttp {
+    return new GraphHttp({
+      login: 'instagram',
+      version: '',
+      fetch: this.deps.fetch,
+      sleep: this.deps.sleep,
+      onUsage: account ? (u: GraphUsage) => this.deps.storage.rateUsage.upsert(account, u.source, u.data, this.deps.clock.nowIso()) : undefined
+    });
+  }
+
   async appSecret(): Promise<string | undefined> {
     return this.deps.store.get(GLOBAL_SCOPE, 'app_secret');
   }
@@ -141,25 +152,35 @@ export class TokenManager {
 
   // ---- refresh (instagram path) ----
   private async maybeRefresh(account: ResolvedAccount): Promise<void> {
-    // Env-provided tokens (and the read-only env backend) are never exchanged or refreshed.
-    if (this.deps.store.readOnly || process.env[envTokenName(account.alias)]) return;
+    try {
+      await this.refreshIfDue(account);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'TOKEN_EXPIRED') throw error;
+      log.warn(`token refresh failed for ${account.alias}: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Refresh when the token is at least 24 h old and expires within 15 days (spec 2.6). Used lazily by tools and daily by the daemon.
+   * Env-provided tokens and the read-only backend are never refreshed. Errors propagate (the lazy caller swallows them).
+   */
+  async refreshIfDue(account: ResolvedAccount): Promise<{ refreshed: boolean; reason: string }> {
+    if (this.deps.store.readOnly || process.env[envTokenName(account.alias)]) return { refreshed: false, reason: 'env or read-only token' };
     const meta = this.meta(account.alias);
-    if (!meta?.expires_at) return;
+    if (!meta?.expires_at) return { refreshed: false, reason: 'no known expiry' };
     const now = this.deps.clock.nowMs();
     const expires = Date.parse(meta.expires_at);
     const last = Date.parse(meta.refreshed_at ?? meta.obtained_at);
-    if (Number.isNaN(expires) || Number.isNaN(last)) return;
+    if (Number.isNaN(expires) || Number.isNaN(last)) return { refreshed: false, reason: 'unreadable token metadata' };
     if (expires <= now) {
       throw new AppError('TOKEN_EXPIRED', `Access token for "${account.alias}" expired on ${meta.expires_at}.`, {
         action: `Generate a new token in the Meta app dashboard and run \`instagram-mcp auth set-token --account ${account.alias}\`.`
       });
     }
-    if (now - last < REFRESH_MIN_AGE_MS || expires - now >= REFRESH_WINDOW_MS) return;
-    try {
-      await this.refresh(account);
-    } catch (error) {
-      log.warn(`token refresh failed for ${account.alias}: ${(error as Error).message}`);
-    }
+    if (now - last < REFRESH_MIN_AGE_MS) return { refreshed: false, reason: 'younger than 24 hours' };
+    if (expires - now >= REFRESH_WINDOW_MS) return { refreshed: false, reason: 'more than 15 days left' };
+    const res = await this.refresh(account);
+    return { refreshed: res.refreshed, reason: res.reason ?? 'refreshed' };
   }
 
   /** Single-flight per account. `force` skips the age/expiry heuristics (CLI `auth refresh`). */
@@ -188,7 +209,7 @@ export class TokenManager {
     const token = await this.deps.store.get(account.alias, 'access_token');
     if (!token) throw this.noTokenError(account);
     registerSecret(token);
-    const res = await this.http('instagram', account.alias).request<{ access_token: string; expires_in?: number }>({
+    const res = await this.httpUnversioned(account.alias).request<{ access_token: string; expires_in?: number }>({
       path: '/refresh_access_token',
       query: { grant_type: 'ig_refresh_token' },
       token,
@@ -233,7 +254,7 @@ export class TokenManager {
     if (account.login === 'instagram') {
       if (opts.exchange !== false && appSecret) {
         try {
-          const res = await this.http('instagram').request<{ access_token: string; expires_in?: number }>({
+          const res = await this.httpUnversioned().request<{ access_token: string; expires_in?: number }>({
             path: '/access_token',
             query: { grant_type: 'ig_exchange_token', client_secret: appSecret },
             token,

@@ -1,0 +1,24 @@
+# Copy to /etc/systemd/system/instagram-mcp-daemon.service (system) or ~/.config/systemd/user/ (user), then:
+#   systemctl enable --now instagram-mcp-daemon
+# Secrets: use secrets.backend "encrypted-file" with INSTAGRAM_MCP_MASTER_KEY, or "env", via the EnvironmentFile below (mode 0600).
+[Unit]
+Description=instagram-mcp daemon (scheduler, webhooks, token refresh)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Environment=INSTAGRAM_MCP_HOME=/home/YOUR_USER/.instagram-mcp
+EnvironmentFile=-/etc/instagram-mcp.env
+ExecStart=/usr/bin/node /opt/instagram-mcp/dist/cli.js daemon
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=20
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/YOUR_USER/.instagram-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

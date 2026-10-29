@@ -49,7 +49,8 @@ export const MAX_RETRY_AFTER_MS = 30_000;
 export function graphBaseUrl(login: LoginPath, version: string, env: NodeJS.ProcessEnv = process.env): string {
   const override = login === 'instagram' ? env.INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM : env.INSTAGRAM_MCP_GRAPH_URL_FACEBOOK;
   const host = override?.trim().replace(/\/+$/, '') || (login === 'instagram' ? 'https://graph.instagram.com' : 'https://graph.facebook.com');
-  return `${host}/${version}`;
+  // An empty version yields the bare host: Meta documents the Instagram-Login token exchange/refresh endpoints unversioned.
+  return version ? `${host}/${version}` : host;
 }
 
 export function appSecretProof(token: string, appSecret: string): string {
