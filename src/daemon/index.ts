@@ -34,7 +34,7 @@ export function tokenRefreshJob(): JobSpec {
 interface RunningJob {
   spec: JobSpec;
   timer?: NodeJS.Timeout;
-  inflight?: Promise<void>;
+  inflight?: Promise<unknown>;
 }
 
 /** `instagram-mcp daemon [--http] [--port N]`. Resolves with the exit code after a graceful shutdown. */
