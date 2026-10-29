@@ -20,7 +20,7 @@ const MATRIX: Record<string, CapabilityRow> = {
   hashtag_search: { description: 'Hashtag search and hashtag media', instagram: 'no', facebook: 'yes' },
   branded_content: { description: 'Paid partnership / branded content flags', instagram: 'probe', facebook: 'yes' },
   story_insights_webhook: { description: 'story_insights webhook', instagram: 'no', facebook: 'yes' },
-  messaging: { description: 'Direct messaging', instagram: 'yes', facebook: 'no' },
+  messaging: { description: 'Direct messaging', instagram: 'yes', facebook: 'probe' },
   collab_invites: { description: 'List/respond to collaboration invites', instagram: 'probe', facebook: 'yes' }
 };
 
