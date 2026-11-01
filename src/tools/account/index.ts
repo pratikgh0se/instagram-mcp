@@ -48,7 +48,7 @@ const PROFILE_FIELDS = 'id,username,name,biography,website,followers_count,follo
 const getProfile = defineTool({
   name: 'instagram_get_profile',
   title: 'Get profile',
-  description: 'Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook login path account_type is always null and warnings says so (the Graph API does not provide it there).',
+  description: 'Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook and unified login paths account_type is always null and warnings says so (the Graph API does not provide it there).',
   inputSchema: { account: accountParam },
   annotations: READ_ONLY,
   async handler(ctx, input) {
@@ -63,7 +63,7 @@ const getProfile = defineTool({
       followers_count: pick('followers_count'), follows_count: pick('follows_count'), media_count: pick('media_count'),
       profile_picture_url: pick('profile_picture_url'), account_type: account.login === 'instagram' ? pick('account_type') : null
     };
-    const warnings = account.login === 'instagram' ? [] : ['ACCOUNT_TYPE_UNAVAILABLE: account_type is not provided by the Graph API on the facebook login path'];
+    const warnings = account.login === 'instagram' ? [] : [`ACCOUNT_TYPE_UNAVAILABLE: account_type is not provided by the Graph API on the ${account.login === 'unified' ? 'unified' : 'facebook'} login path`];
     return ok({ ...data, warnings }, `@${String(data.username ?? account.alias)}: ${data.followers_count ?? '?'} followers, ${data.media_count ?? '?'} posts.`);
   }
 });
@@ -80,7 +80,7 @@ const getRateLimits = defineTool({
   name: 'instagram_get_rate_limits',
   title: 'Get rate limits',
   description:
-    'Publishing quota (content_publishing_limit), the most recent business-use-case and app usage reported by Meta response headers, and the remaining hashtag-search budget (facebook login path only).',
+    'Publishing quota (content_publishing_limit), the most recent business-use-case and app usage reported by Meta response headers, and the remaining hashtag-search budget (facebook and unified login paths only).',
   inputSchema: { account: accountParam },
   annotations: READ_ONLY,
   async handler(ctx, input) {
@@ -112,7 +112,7 @@ const getRateLimits = defineTool({
     };
 
     let hashtag_budget: { used: number; limit: number; remaining: number; window_days: number } | null = null;
-    if (account.login === 'facebook') {
+    if (account.login !== 'instagram') {
       const since = new Date(ctx.clock.nowMs() - HASHTAG_WINDOW_DAYS * 86_400_000).toISOString();
       const used = ctx.storage.hashtagBudget.usedSince(account.alias, since).length;
       hashtag_budget = { used, limit: HASHTAG_LIMIT, remaining: Math.max(0, HASHTAG_LIMIT - used), window_days: HASHTAG_WINDOW_DAYS };

@@ -86,12 +86,23 @@ export class TokenManager {
     });
   }
 
-  async appSecret(): Promise<string | undefined> {
-    return this.deps.store.get(GLOBAL_SCOPE, 'app_secret');
+  /** Effective app secret (contract 1.16.6): the account's own, else the global one, else undefined. */
+  async appSecret(account?: { alias: string }): Promise<string | undefined> {
+    if (account) {
+      const own = await this.deps.store.get(account.alias, 'app_secret');
+      if (own) { registerSecret(own); return own; }
+    }
+    const global = await this.deps.store.get(GLOBAL_SCOPE, 'app_secret');
+    if (global) registerSecret(global);
+    return global;
+  }
+
+  async hasOwnAppSecret(alias: string): Promise<boolean> {
+    return Boolean(await this.deps.store.get(alias, 'app_secret'));
   }
 
   private placement(account: ResolvedAccount): 'query' | 'header' {
-    return account.login === 'facebook' || account.token_in_header ? 'header' : 'query';
+    return account.login !== 'instagram' || account.token_in_header ? 'header' : 'query';
   }
 
   meta(alias: string): TokenMeta | undefined {
@@ -118,8 +129,8 @@ export class TokenManager {
     return token;
   }
 
-  async getAppSecretOrUndefined(): Promise<string | undefined> {
-    return this.appSecret();
+  async getAppSecretOrUndefined(account?: { alias: string }): Promise<string | undefined> {
+    return this.appSecret(account);
   }
 
   async resolveIgUserId(account: ResolvedAccount): Promise<string> {
@@ -128,6 +139,11 @@ export class TokenManager {
     if (cached) return cached;
     if (account.login === 'instagram') return 'me';
     const token = await this.getAccessToken(account);
+    if (account.login === 'unified') {
+      const chosen = await this.discoverUnifiedIgUserId(account, token);
+      this.deps.storage.kv.set(`ig_user_id:${account.alias}`, chosen, this.deps.clock.nowIso());
+      return chosen;
+    }
     const found = await this.discoverFacebookIgUserId(account, token);
     if (!found) {
       throw new AppError('CONFIG_INVALID', `Page ${account.page_id} has no linked Instagram professional account.`, {
@@ -143,11 +159,40 @@ export class TokenManager {
       query: { fields: 'instagram_business_account' },
       token,
       tokenPlacement: 'header',
-      appSecret: await this.appSecret()
+      appSecret: await this.appSecret(account)
     });
     const id = res.data.instagram_business_account?.id ?? null;
     if (id) this.deps.storage.kv.set(`ig_user_id:${account.alias}`, id, this.deps.clock.nowIso());
     return id;
+  }
+
+  /** Contract 1.16.3: `GET /me/assigned_instagram_accounts`; exactly one entry -> its id, else CONFIG_INVALID. */
+  private async listAssignedIds(account: ResolvedAccount, token: string): Promise<string[]> {
+    const res = await this.http('unified', account.alias).request<{ data?: Array<{ id?: string | number }> }>({
+      path: '/me/assigned_instagram_accounts',
+      token,
+      tokenPlacement: 'header',
+      appSecret: await this.appSecret(account)
+    });
+    return (res.data.data ?? []).map((e) => e.id).filter((i): i is string | number => i !== undefined && i !== null).map(String);
+  }
+
+  private unifiedChoiceError(account: ResolvedAccount, ids: string[]): AppError {
+    if (ids.length === 0) {
+      return new AppError('CONFIG_INVALID', `No Instagram account is assigned to the token of account "${account.alias}".`, {
+        action: 'No Instagram account is assigned to this token. In the Meta app dashboard add business_management to the Unified login configuration (Facebook Login for Business > Configurations), make sure the Instagram account is an asset of the business portfolio, generate a new token, then run instagram-mcp auth set-token again.'
+      });
+    }
+    return new AppError('CONFIG_INVALID', `The token of account "${account.alias}" has several Instagram accounts assigned.`, {
+      action: `Pick one: instagram-mcp accounts add --alias ${account.alias} --login unified --ig-user-id <id> (assigned ids: ${ids.join(', ')}).`,
+      details: { ids }
+    });
+  }
+
+  private async discoverUnifiedIgUserId(account: ResolvedAccount, token: string): Promise<string> {
+    const ids = await this.listAssignedIds(account, token);
+    if (ids.length === 1) return ids[0]!;
+    throw this.unifiedChoiceError(account, ids);
   }
 
   // ---- refresh (instagram path) ----
@@ -243,7 +288,7 @@ export class TokenManager {
     const notes: string[] = [];
     const now = this.deps.clock.nowMs();
     const nowIso = new Date(now).toISOString();
-    const appSecret = await this.appSecret();
+    const appSecret = await this.appSecret(account);
     registerSecret(appSecret);
     let expiresAt: string | null = null;
     let scopes: string[] | null = opts.scopes ?? null;
@@ -251,7 +296,27 @@ export class TokenManager {
     let igUserId: string | null = account.ig_user_id;
     let username: string | null = null;
 
-    if (account.login === 'instagram') {
+    if (account.login === 'unified') {
+      // Contract 1.16.4: no exchange, no refresh; the token is stored only after the ig_user_id choice succeeds.
+      const ids = await this.listAssignedIds(account, token);
+      if (account.ig_user_id) {
+        if (ids.length > 0 && !ids.includes(account.ig_user_id)) {
+          notes.push(`NOT_ASSIGNED: the configured ig_user_id ${account.ig_user_id} is not among the Instagram accounts assigned to this token (${ids.join(', ')}); token stored anyway.`);
+        }
+      } else if (ids.length === 1) {
+        igUserId = ids[0]!;
+      } else {
+        throw this.unifiedChoiceError(account, ids);
+      }
+      try {
+        const who = await this.http('unified', account.alias).request<{ username?: string }>({
+          path: `/${igUserId}`, query: { fields: 'username' }, token, tokenPlacement: 'header', appSecret
+        });
+        username = who.data.username ?? null;
+      } catch {
+        notes.push('Could not look up the Instagram username (GET /{ig_user_id}?fields=username failed); token stored anyway.');
+      }
+    } else if (account.login === 'instagram') {
       if (opts.exchange !== false && appSecret) {
         try {
           const res = await this.httpUnversioned().request<{ access_token: string; expires_in?: number }>({
@@ -350,6 +415,7 @@ export class TokenManager {
 
   async logout(account: ResolvedAccount): Promise<void> {
     await this.deps.store.delete(account.alias, 'access_token');
+    await this.deps.store.delete(account.alias, 'app_secret');
     this.deps.storage.kv.delete(`token_meta:${account.alias}`);
   }
 

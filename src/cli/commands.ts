@@ -89,10 +89,14 @@ export async function auth(argv: string[]): Promise<number> {
         return 0;
       }
       case 'set-app-secret': {
-        const secret = await readSecret('App secret (input hidden): ');
+        // Contract 1.16.6: --account stores the per-account override; an unknown alias is INVALID_INPUT.
+        if (values.account && !ctx.config.accounts.some((a) => a.alias === values.account)) {
+          throw usage(`Account "${values.account}" is not configured.`);
+        }
+        const secret = await readSecret(values.account ? `App secret for "${values.account}" (input hidden): ` : 'App secret (input hidden): ');
         registerSecret(secret);
-        await ctx.secrets.set(GLOBAL_SCOPE, 'app_secret', secret);
-        out('App secret stored.');
+        await ctx.secrets.set(values.account ?? GLOBAL_SCOPE, 'app_secret', secret);
+        out(values.account ? `App secret stored for "${values.account}".` : 'App secret stored.');
         return 0;
       }
       case 'status': {
@@ -110,6 +114,7 @@ export async function auth(argv: string[]): Promise<number> {
           rows.push({
             alias: a.alias, login: a.login, ig_user_id: a.ig_user_id,
             token: { present, source: fromEnv ? 'env' : s.backend, env_var: envVar, expires_at: s.expires_at, scopes: s.scopes },
+            app_secret_override: await ctx.auth.hasOwnAppSecret(a.alias).catch(() => false),
             valid
           });
         }
@@ -132,7 +137,7 @@ export async function auth(argv: string[]): Promise<number> {
         if (!values.account) throw usage('auth logout needs --account <alias>.');
         const account = ctx.account(values.account);
         await ctx.auth.logout(account);
-        out(`Removed the stored token for "${account.alias}".`);
+        out(`Removed the stored token and app secret for "${account.alias}".`);
         return 0;
       }
       default:
@@ -162,10 +167,11 @@ export async function accounts(argv: string[]): Promise<number> {
       return 0;
     }
     case 'add': {
-      if (!values.alias || !values.login) throw usage('accounts add needs --alias <name> --login instagram|facebook.');
+      if (!values.alias || !values.login) throw usage('accounts add needs --alias <name> --login instagram|facebook|unified.');
       const entry = accountSchema.safeParse({ alias: values.alias, login: values.login, ig_user_id: values['ig-user-id'] ?? null, page_id: values['page-id'] ?? null });
       if (!entry.success) throw usage(`Invalid account: ${entry.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
       if (entry.data.login === 'facebook' && !entry.data.page_id) throw usage('The facebook login path needs --page-id.');
+      if (entry.data.login === 'unified' && values['page-id'] !== undefined) throw usage('The unified login path has no Page; --page-id is not allowed with --login unified.');
       if (config.accounts.some((a) => a.alias === entry.data.alias)) throw usage(`Account "${entry.data.alias}" already exists.`);
       config.accounts.push(entry.data);
       if (values['app-id']) config.app.app_id = values['app-id'].trim();
@@ -185,6 +191,7 @@ export async function accounts(argv: string[]): Promise<number> {
         const ctx = createContext({ mode: 'cli' });
         try {
           await ctx.secrets.delete(values.alias, 'access_token').catch(() => undefined);
+          await ctx.secrets.delete(values.alias, 'app_secret').catch(() => undefined);
           ctx.storage.kv.delete(`token_meta:${values.alias}`);
         } finally {
           ctx.close();
@@ -194,7 +201,7 @@ export async function accounts(argv: string[]): Promise<number> {
       return 0;
     }
     default:
-      throw usage('Usage: instagram-mcp accounts add|list|remove  (add: --alias <n> --login instagram|facebook [--ig-user-id <id>] [--page-id <id>] [--app-id <id>] [--default])');
+      throw usage('Usage: instagram-mcp accounts add|list|remove  (add: --alias <n> --login instagram|facebook|unified [--ig-user-id <id>] [--page-id <id>] [--app-id <id>] [--default])');
   }
 }
 

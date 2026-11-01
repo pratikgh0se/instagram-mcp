@@ -9,19 +9,20 @@ export interface CapabilityRow {
   description: string;
   instagram: Support;
   facebook: Support;
+  unified: Support;
 }
 
 /** Static matrix, spec 2.1. Domains may add rows via registerCapability() in their register hook. */
 const MATRIX: Record<string, CapabilityRow> = {
-  publish_url_media: { description: 'Publish media from a public URL', instagram: 'yes', facebook: 'yes' },
-  publish_local_video_resumable: { description: 'Resumable local video upload (rupload.facebook.com)', instagram: 'no', facebook: 'yes' },
-  delete_media: { description: 'Delete own media', instagram: 'probe', facebook: 'yes' },
-  business_discovery: { description: 'Business discovery of other public professional accounts', instagram: 'no', facebook: 'yes' },
-  hashtag_search: { description: 'Hashtag search and hashtag media', instagram: 'no', facebook: 'yes' },
-  branded_content: { description: 'Paid partnership / branded content flags', instagram: 'probe', facebook: 'yes' },
-  story_insights_webhook: { description: 'story_insights webhook', instagram: 'no', facebook: 'yes' },
-  messaging: { description: 'Direct messaging', instagram: 'yes', facebook: 'probe' },
-  collab_invites: { description: 'List/respond to collaboration invites', instagram: 'probe', facebook: 'yes' }
+  publish_url_media: { description: 'Publish media from a public URL', instagram: 'yes', facebook: 'yes', unified: 'yes' },
+  publish_local_video_resumable: { description: 'Resumable local video upload (rupload.facebook.com)', instagram: 'no', facebook: 'yes', unified: 'yes' },
+  delete_media: { description: 'Delete own media', instagram: 'probe', facebook: 'yes', unified: 'yes' },
+  business_discovery: { description: 'Business discovery of other public professional accounts', instagram: 'no', facebook: 'yes', unified: 'yes' },
+  hashtag_search: { description: 'Hashtag search and hashtag media', instagram: 'no', facebook: 'yes', unified: 'probe' },
+  branded_content: { description: 'Paid partnership / branded content flags', instagram: 'probe', facebook: 'yes', unified: 'probe' },
+  story_insights_webhook: { description: 'story_insights webhook', instagram: 'no', facebook: 'yes', unified: 'yes' },
+  messaging: { description: 'Direct messaging', instagram: 'yes', facebook: 'probe', unified: 'yes' },
+  collab_invites: { description: 'List/respond to collaboration invites', instagram: 'probe', facebook: 'yes', unified: 'probe' }
 };
 
 export function registerCapability(feature: string, row: CapabilityRow): void {

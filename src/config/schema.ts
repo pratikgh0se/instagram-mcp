@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const loginPathSchema = z.enum(['instagram', 'facebook']);
+export const loginPathSchema = z.enum(['instagram', 'facebook', 'unified']);
 export type LoginPath = z.infer<typeof loginPathSchema>;
 
 /** Action names usable in policy.disabled_actions (contract 1.13.1). */

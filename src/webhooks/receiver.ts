@@ -140,12 +140,17 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
         req.resume();
         return text(res, 401, 'Invalid signature');
       }
-      const appSecret = await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret');
-      if (!appSecret) {
+      // Contract section 5: the signature may be valid under the global or any account's own app secret.
+      const appSecrets: string[] = [];
+      for (const scope of [GLOBAL_SCOPE, ...listAccounts(ctx.config).map((a) => a.alias)]) {
+        const v = await ctx.secrets.get(scope, 'app_secret').catch(() => undefined);
+        if (v && !appSecrets.includes(v)) appSecrets.push(v);
+      }
+      if (appSecrets.length === 0) {
         req.resume();
         return text(res, 503, 'Webhook receiver is not configured (no app secret)');
       }
-      registerSecret(appSecret);
+      appSecrets.forEach((s) => registerSecret(s));
       let raw: Buffer;
       try {
         raw = await readBodyLimited(req);
@@ -153,7 +158,7 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
         if (error instanceof BodyTooLarge) return respondTooLarge(req, res, 'Payload too large', 'text/plain');
         throw error;
       }
-      if (!verifySignature(raw, sig, appSecret)) return text(res, 401, 'Invalid signature');
+      if (!appSecrets.some((s) => verifySignature(raw, sig, s))) return text(res, 401, 'Invalid signature');
       let body: unknown;
       try {
         body = JSON.parse(raw.toString('utf8'));

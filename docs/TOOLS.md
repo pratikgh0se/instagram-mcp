@@ -65,7 +65,7 @@ Title: Get profile
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook login path account_type is always null and warnings says so (the Graph API does not provide it there).
+Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook and unified login paths account_type is always null and warnings says so (the Graph API does not provide it there).
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -77,7 +77,7 @@ Title: Get rate limits
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Publishing quota (content_publishing_limit), the most recent business-use-case and app usage reported by Meta response headers, and the remaining hashtag-search budget (facebook login path only).
+Publishing quota (content_publishing_limit), the most recent business-use-case and app usage reported by Meta response headers, and the remaining hashtag-search budget (facebook and unified login paths only).
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|

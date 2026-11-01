@@ -48,6 +48,7 @@ export const MIN_DELAY_MS = 1;
 export const MAX_RETRY_AFTER_MS = 30_000;
 
 export function graphBaseUrl(login: LoginPath, version: string, env: NodeJS.ProcessEnv = process.env): string {
+  // facebook and unified share graph.facebook.com (contract 1.4).
   const name = login === 'instagram' ? 'INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM' : 'INSTAGRAM_MCP_GRAPH_URL_FACEBOOK';
   const override = checkUrlOverride(name, env[name], env);
   const host = override?.replace(/\/+$/, '') || (login === 'instagram' ? 'https://graph.instagram.com' : 'https://graph.facebook.com');

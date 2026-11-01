@@ -110,7 +110,10 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
 
   const wh = ctx.config.webhooks.enabled;
   const verify = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'webhook_verify_token').catch(() => undefined));
-  const appSecret = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret').catch(() => undefined));
+  const globalSecret = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret').catch(() => undefined));
+  const ownSecrets = new Set<string>();
+  for (const a of accounts) if (await ctx.secrets.get(a.alias, 'app_secret').catch(() => undefined)) ownSecrets.add(a.alias);
+  const appSecret = globalSecret || ownSecrets.size > 0;
   out.push(wh && verify && appSecret ? check('webhooks', 'pass', 'Enabled with verify token and app secret.') : check('webhooks', 'warn', wh ? 'Enabled but the verify token or app secret is missing.' : 'Webhooks are disabled.'));
 
   if (subChecked === 0) {
@@ -134,10 +137,10 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
     const missing: string[] = [];
     const noAppId = !ctx.config.app.app_id;
     if (noAppId) missing.push('app id (app.app_id)');
-    if (!appSecret) missing.push('app secret');
+    if (!globalSecret && fbAccounts.some((a) => !ownSecrets.has(a.alias))) missing.push('app secret');
     if (missing.length === 0) out.push(check('app_credentials', 'pass', `App id and app secret are present for ${fbAccounts.length} facebook-path account(s).`));
     else {
-      const fixes = [...(noAppId ? ['instagram-mcp app set --app-id <APP_ID>'] : []), ...(!appSecret ? ['instagram-mcp auth set-app-secret'] : [])];
+      const fixes = [...(noAppId ? ['instagram-mcp app set --app-id <APP_ID>'] : []), ...(missing.includes('app secret') ? ['instagram-mcp auth set-app-secret'] : [])];
       out.push(check('app_credentials', 'warn', `Missing ${missing.join(' and ')}. Without both, auth set-token cannot exchange the token and it expires in about 1 hour.`, `Run: ${fixes.join(' and ')}`));
     }
   }

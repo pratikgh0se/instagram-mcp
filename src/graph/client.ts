@@ -40,8 +40,8 @@ export class GraphClient {
 
   private async withAuth(): Promise<{ token: string; tokenPlacement: 'query' | 'header'; appSecret?: string }> {
     const token = await this.auth.getAccessToken(this.account);
-    if (this.account.login === 'facebook') {
-      return { token, tokenPlacement: 'header', appSecret: await this.auth.getAppSecretOrUndefined() };
+    if (this.account.login !== 'instagram') {
+      return { token, tokenPlacement: 'header', appSecret: await this.auth.getAppSecretOrUndefined(this.account) };
     }
     return { token, tokenPlacement: this.account.token_in_header ? 'header' : 'query' };
   }

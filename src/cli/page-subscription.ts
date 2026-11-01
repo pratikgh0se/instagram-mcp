@@ -17,6 +17,11 @@ const FIELD_RE = /^[a-z_]{1,64}$/;
 
 /** Contract 3.6: facebook-path accounts only. */
 export function requireFacebookPath(account: ResolvedAccount): string {
+  if (account.login === 'unified') {
+    throw new AppError('CAPABILITY_UNAVAILABLE', `Account "${account.alias}" uses the unified login path; Unified-login apps receive webhooks through the app's Instagram webhook subscription in the Meta dashboard, not a Page subscription.`, {
+      action: 'Configure the Instagram webhook subscription for the app in the Meta dashboard.'
+    });
+  }
   if (account.login !== 'facebook' || !account.page_id) {
     throw new AppError('CAPABILITY_UNAVAILABLE', `Account "${account.alias}" uses the instagram login path; Instagram-login apps receive webhooks without a Page subscription.`, {
       action: 'Use an account configured with login "facebook" (needs page_id) for Page subscriptions.'

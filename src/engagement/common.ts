@@ -43,7 +43,7 @@ export async function ownId(account: ResolvedAccount, graph: GraphClient): Promi
   return account.ig_user_id ?? (await graph.igUserId());
 }
 
-/** DM edge owner: the Page on the facebook login path (Messenger Platform), the IG user otherwise (contract 2.5). */
+/** DM edge owner: the Page on the facebook login path (Messenger Platform), the IG user on the instagram and unified paths (contract 2.5, 1.16.2). */
 export async function dmBase(account: ResolvedAccount, graph: GraphClient): Promise<string> {
   if (account.login === 'facebook') {
     if (!account.page_id) throw new AppError('CONFIG_INVALID', `Account ${account.alias} uses facebook login but has no page_id.`);

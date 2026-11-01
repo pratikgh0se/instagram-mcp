@@ -8,7 +8,7 @@ import { checkUrlOverride } from '../config/load.js';
 import { mapMetaError, type MetaErrorBody } from './errors.js';
 
 /**
- * Resumable video upload (rupload.facebook.com), facebook login path only. One POST, never retried:
+ * Resumable video upload (rupload.facebook.com), facebook and unified login paths only. One POST, never retried:
  * a failure is a definite failure of the (not yet published) container, never an ambiguous outcome.
  */
 export interface RuploadUploadInput {
@@ -30,7 +30,7 @@ export function ruploadBaseUrl(version: string, env: NodeJS.ProcessEnv = process
 }
 
 export function supportsRupload(login: LoginPath): boolean {
-  return login === 'facebook';
+  return login === 'facebook' || login === 'unified';
 }
 
 const RUPLOAD_TIMEOUT_MS = 120_000;

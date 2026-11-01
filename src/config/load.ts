@@ -118,6 +118,11 @@ export function loadConfig(paths: Paths): Config {
   for (const a of config.accounts) {
     if (aliases.has(a.alias)) throw new AppError('CONFIG_INVALID', `Duplicate account alias "${a.alias}".`);
     aliases.add(a.alias);
+    if (a.login === 'unified' && a.page_id) {
+      throw new AppError('CONFIG_INVALID', `Account "${a.alias}" uses the unified login path, which has no Page; remove "page_id".`, {
+        action: 'Remove page_id from the account (unified login never uses a Facebook Page).'
+      });
+    }
     if (a.login === 'facebook' && !a.page_id) {
       throw new AppError('CONFIG_INVALID', `Account "${a.alias}" uses the facebook login path and needs "page_id".`, {
         action: 'Add page_id to the account (the Facebook Page linked to the Instagram account).'

@@ -9,7 +9,7 @@ export function envTokenName(alias: string): string {
 export function envVarFor(scope: string, kind: SecretKind): string {
   switch (kind) {
     case 'access_token': return envTokenName(scope);
-    case 'app_secret': return 'INSTAGRAM_MCP_APP_SECRET';
+    case 'app_secret': return scope === GLOBAL_SCOPE ? 'INSTAGRAM_MCP_APP_SECRET' : `INSTAGRAM_MCP_APP_SECRET_${scope.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
     case 'http_bearer': return 'INSTAGRAM_MCP_HTTP_TOKEN';
     case 'webhook_verify_token': return 'INSTAGRAM_MCP_WEBHOOK_VERIFY_TOKEN';
   }
@@ -21,7 +21,7 @@ export class EnvTokenStore implements TokenStore {
   constructor(private readonly env: NodeJS.ProcessEnv = process.env) {}
 
   async get(scope: string, kind: SecretKind): Promise<string | undefined> {
-    if (kind !== 'access_token' && scope !== GLOBAL_SCOPE) scope = GLOBAL_SCOPE;
+    if (kind !== 'access_token' && kind !== 'app_secret' && scope !== GLOBAL_SCOPE) scope = GLOBAL_SCOPE;
     const v = this.env[envVarFor(scope, kind)]?.trim();
     return v ? v : undefined;
   }

@@ -62,10 +62,10 @@ const STORY = ['follows', 'navigation', 'profile_activity', 'profile_visits', 'r
 
 export type MediaProductType = 'FEED' | 'REELS' | 'STORY';
 
-export function validMediaMetrics(type: MediaProductType, login: 'instagram' | 'facebook'): string[] {
+export function validMediaMetrics(type: MediaProductType, login: 'instagram' | 'facebook' | 'unified'): string[] {
   const base = type === 'FEED' ? FEED : type === 'REELS' ? REELS : STORY;
   const extra = type === 'STORY' ? ['total_views', 'facebook_views', 'link_clicks'] : FB_EXTRA;
-  return login === 'facebook' ? [...base, ...extra] : [...base];
+  return login !== 'instagram' ? [...base, ...extra] : [...base];
 }
 
 export const DEFAULT_MEDIA_METRICS: Record<MediaProductType, string[]> = {
