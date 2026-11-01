@@ -8,6 +8,8 @@ Amendment 2026-11-01 (first live E2E, facebook path): (a) `instagram_get_media`,
 
 Amendment 2026-11-01 (second live E2E, facebook path): `conversation_id` inputs accept 1 to 256 characters of `[A-Za-z0-9_-]` (1.5, U32); every other URL-path id keeps the 64-character limit. U29 is resolved: conversations appear in Development mode once the other participant has an app role (Instagram Tester).
 
+Amendment 2026-11-01 (orphaned operations, found in live E2E): a `running` operation whose process died is detected and marked `unknown` (1.13.9); `serve` drains in-flight approves before exiting (1.13.10); `instagram_approve` sends MCP progress notifications when the client asks for them (1.13.11); new env variables `INSTAGRAM_MCP_HEARTBEAT_MS`, `INSTAGRAM_MCP_ORPHAN_AFTER_MS`, `INSTAGRAM_MCP_DRAIN_MS` (1.2).
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -41,10 +43,13 @@ Exit codes for `serve` and `daemon` startup: 0 normal shutdown (SIGTERM/SIGINT),
 | `INSTAGRAM_MCP_GRAPH_URL_FACEBOOK` | Same for the facebook path. |
 | `INSTAGRAM_MCP_RUPLOAD_URL` | Replaces `https://rupload.facebook.com`. |
 | `INSTAGRAM_MCP_POLL_INTERVAL_MS` | Container polling interval (integer >= 1, default 2000). |
+| `INSTAGRAM_MCP_HEARTBEAT_MS` | Operation heartbeat interval (integer >= 100, default 20000; 1.13.9). |
+| `INSTAGRAM_MCP_ORPHAN_AFTER_MS` | Age of the last heartbeat after which a `running` operation is orphaned (integer >= 500, default 120000; MUST be greater than the heartbeat interval, else startup exits 1; 1.13.9). |
+| `INSTAGRAM_MCP_DRAIN_MS` | Maximum time `serve` waits for in-flight approves on shutdown (integer >= 0, default 300000; 1.13.10). |
 | `INSTAGRAM_MCP_TEST_MODE` | `1` enables test affordances: honoring `INSTAGRAM_MCP_NOW`, and loopback http media URLs (section 1.11). Any other value or unset = off. |
 | `INSTAGRAM_MCP_NOW` | ISO 8601 instant. Honored only when `INSTAGRAM_MCP_TEST_MODE=1`; otherwise ignored. When honored the process clock is FROZEN at that instant (it does not advance). The clock governs: `expires_at`, approval expiry, `created_at` fields, scheduler decisions, "days" windows, hashtag budget windows, messaging windows. It does NOT govern network timeouts, retry back-off, or polling sleeps (real timers). |
 
-Env overrides (`GRAPH_URL_*`, `RUPLOAD_URL`, `POLL_INTERVAL_MS`) are honored always, not only in test mode. Override values MUST be `http://` or `https://` URLs without path/query; otherwise startup exits 1 (CONFIG_INVALID message on stderr).
+Env overrides (`GRAPH_URL_*`, `RUPLOAD_URL`, `POLL_INTERVAL_MS`, `HEARTBEAT_MS`, `ORPHAN_AFTER_MS`, `DRAIN_MS`) are honored always, not only in test mode. Override values MUST be `http://` or `https://` URLs without path/query; otherwise startup exits 1 (CONFIG_INVALID message on stderr).
 
 The env secrets backend (`secrets.backend: "env"`) is read-only. With it the server MUST NOT call any token exchange/refresh endpoint.
 
@@ -310,6 +315,26 @@ Every approve that passes `pending -> running` creates an operation (`op_...`). 
 #### 1.13.8 Ambiguous outcomes
 
 Operation status `unknown` + error `OUTCOME_UNKNOWN` is produced when a NON-idempotent write ends with a network error, timeout, or HTTP 5xx. Currently the only write with a defined reconcile path is `media_publish`; for every other write an ambiguous failure also yields `unknown` with `details.reconcile = {operation_id}` and no automatic reconcile. HTTP 4xx and Meta error bodies on writes are definite failures (`failed`), including 429.
+
+#### 1.13.9 Orphaned operations
+
+An operation is `running` only while the process executing it is alive. While a process executes an operation (approve or scheduler pass) it stores `heartbeat_at` on the operation when it starts and refreshes it at least every `INSTAGRAM_MCP_HEARTBEAT_MS`. Heartbeats and orphan ages use the real wall clock, never the frozen test clock (`INSTAGRAM_MCP_NOW`).
+
+A `running` operation whose `heartbeat_at` (or `created_at` when it has no heartbeat) is older than `INSTAGRAM_MCP_ORPHAN_AFTER_MS` is orphaned. Orphan detection runs (a) once when `serve` or `daemon` starts, before it accepts requests, and (b) at the start of every `instagram_get_operation`, `instagram_list_operations` and `instagram_approve` call (the approve check covers only the approval being approved). Detection makes zero Graph requests and transitions each orphaned operation atomically (compare-and-set on status `running` and the stale heartbeat, so a live process that refreshes in time is never touched):
+
+- operation status `unknown`, `finished_at` = now, error `OUTCOME_UNKNOWN` with message `The process running this operation stopped before it finished.`, `retryable:false`, `action` containing `instagram_get_operation`, `details.reconcile = {operation_id}` plus `creation_id` when the operation had stored the id of the container it was about to publish (single media, or the carousel parent);
+- the approval status becomes `unknown`; a later `instagram_approve` with that `approval_id` replays this stored outcome with zero requests (`replayed:true`);
+- for a scheduler-originated operation the linked scheduled job becomes `unknown`.
+
+An orphaned `publish` with `details.reconcile.creation_id` is reconciled by `instagram_get_operation` exactly as in 2.1 (Reconciliation), including updating a linked scheduled job. Without a `creation_id` it stays `unknown`, and the `action` text also tells the user to check `instagram_list_media` before publishing again. Batches (`comment_actions` and similar) become `unknown` as a whole; items already finished keep their stored per-item results, unfinished items become `unknown` with `OUTCOME_UNKNOWN`.
+
+#### 1.13.10 Shutdown drain (`serve`)
+
+When stdio `serve` sees stdin end, or receives SIGTERM or SIGINT, it stops accepting new tool calls (a call that arrives anyway gets an MCP error) and waits for in-flight `instagram_approve` calls to finish, up to `INSTAGRAM_MCP_DRAIN_MS`, then exits 0. A second SIGTERM or SIGINT exits immediately. Results of drained calls are still stored (operation ledger) even if no client receives them. An operation cut off by the drain deadline or a hard kill is left `running` and later handled by 1.13.9. `serve --http` and `daemon` apply the same drain to in-flight approves and scheduler passes on SIGTERM/SIGINT.
+
+#### 1.13.11 Progress notifications
+
+When the `tools/call` request for `instagram_approve` carries `_meta.progressToken`, the server sends `notifications/progress` with that token at least every 10 s until it sends the result: `progress` is a strictly increasing integer (completed steps), `total` is the planned step count when known, `message` is a short step label without ids or secrets (for example `Uploading video`, `Waiting for container 3 of 20`, `Publishing`). Without a progress token no notifications are sent. Clients with a request timeout should enable reset-on-progress (MCP SDK `resetTimeoutOnProgress`) or raise the timeout for approves; a 20-item carousel can take several minutes.
 
 ### 1.14 Redaction
 

@@ -146,9 +146,30 @@ export function checkUrlOverride(name: string, raw: string | undefined, env: Nod
   return value;
 }
 
+function intEnv(name: string, raw: string | undefined, min: number, dflt: number): number {
+  const v = raw?.trim();
+  if (!v) return dflt;
+  const n = Number(v);
+  if (!/^\d+$/.test(v) || !Number.isSafeInteger(n) || n < min) throw new AppError('CONFIG_INVALID', `${name} must be an integer >= ${min}.`);
+  return n;
+}
+
+/** Operation heartbeat interval (INSTAGRAM_MCP_HEARTBEAT_MS, default 20000, contract 1.13.9). */
+export const heartbeatMs = (env: NodeJS.ProcessEnv = process.env): number => intEnv('INSTAGRAM_MCP_HEARTBEAT_MS', env.INSTAGRAM_MCP_HEARTBEAT_MS, 100, 20_000);
+/** Heartbeat age after which a running operation is orphaned (INSTAGRAM_MCP_ORPHAN_AFTER_MS, default 120000). */
+export const orphanAfterMs = (env: NodeJS.ProcessEnv = process.env): number => intEnv('INSTAGRAM_MCP_ORPHAN_AFTER_MS', env.INSTAGRAM_MCP_ORPHAN_AFTER_MS, 500, 120_000);
+/** Shutdown drain budget (INSTAGRAM_MCP_DRAIN_MS, default 300000, contract 1.13.10). */
+export const drainMs = (env: NodeJS.ProcessEnv = process.env): number => intEnv('INSTAGRAM_MCP_DRAIN_MS', env.INSTAGRAM_MCP_DRAIN_MS, 0, 300_000);
+
 /** Env overrides must be https URLs without path or query (http only in test mode). Throws CONFIG_INVALID. */
 export function validateEnvOverrides(env: NodeJS.ProcessEnv = process.env): void {
   for (const name of OVERRIDE_VARS) checkUrlOverride(name, env[name], env);
+  const hb = heartbeatMs(env);
+  const orphan = orphanAfterMs(env);
+  drainMs(env);
+  if (orphan <= hb) {
+    throw new AppError('CONFIG_INVALID', `INSTAGRAM_MCP_ORPHAN_AFTER_MS (${orphan}) must be greater than INSTAGRAM_MCP_HEARTBEAT_MS (${hb}).`);
+  }
 }
 
 export function saveConfig(paths: Paths, config: Config): void {

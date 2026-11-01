@@ -7,6 +7,7 @@ import { createRuploadClient } from '../graph/rupload.js';
 import {
   cleanupStaging, deleteStaged, ensureMediaHost, getStagedPath, publicUrl, stageFile, stagedExpiry
 } from '../media-host/index.js';
+import { reportProgress } from '../safety/progress.js';
 import { containerBody, mediaRoute, usesBranding, type UrlResolver } from './plan.js';
 import type { ContainerState, PublishParams, StagedTokens } from './types.js';
 
@@ -213,8 +214,11 @@ export function isPollTimeout(error: unknown): boolean {
 export async function ensureContainers(rt: Runtime, p: PublishParams, resolved: Resolved, state: ContainerState, hooks: Hooks): Promise<void> {
   const resolver: UrlResolver = { media: (i) => resolved.urls[i] ?? null, cover: () => resolved.cover };
   const branded = usesBranding(p);
-  const settle = async (id: string): Promise<void> => {
+  const count = p.media.length;
+  const total = p.kind === 'carousel' ? 2 * count + 3 : 3;
+  const settle = async (id: string, label: string): Promise<void> => {
     if (state.finished.includes(id)) return;
+    reportProgress(label, total);
     await pollContainer(rt.graph, id);
     state.finished.push(id);
     hooks.persist(state);
@@ -223,20 +227,23 @@ export async function ensureContainers(rt: Runtime, p: PublishParams, resolved: 
     if (p.kind === 'carousel') {
       for (let i = 0; i < p.media.length; i++) {
         if (state.children[i] === undefined) {
+          reportProgress(`${resolved.files[i] ? 'Uploading video' : 'Creating item'} ${i + 1} of ${count}`, total);
           state.children[i] = await createContainer(rt, containerBody(p, i, resolver), false, resolved.files[i] ?? null);
           hooks.persist(state);
         }
-        await settle(state.children[i]!);
+        await settle(state.children[i]!, `Waiting for container ${i + 1} of ${count}`);
       }
       if (!state.parent) {
+        reportProgress('Creating carousel', total);
         state.parent = await createContainer(rt, containerBody(p, 'parent', resolver, state.children), branded, null);
         hooks.persist(state);
       }
     } else if (!state.parent) {
+      reportProgress(resolved.files[0] ? 'Uploading video' : 'Creating container', total);
       state.parent = await createContainer(rt, containerBody(p, 'single', resolver), branded, resolved.files[0] ?? null);
       hooks.persist(state);
     }
-    await settle(state.parent!);
+    await settle(state.parent!, p.kind === 'carousel' ? 'Waiting for carousel' : 'Waiting for container');
   } catch (error) {
     throw annotate(error, currentId(state));
   }
@@ -245,7 +252,9 @@ export async function ensureContainers(rt: Runtime, p: PublishParams, resolved: 
 /** media_publish + permalink read. Only an ambiguous media_publish failure is OUTCOME_UNKNOWN. */
 export async function publishContainer(rt: Runtime, p: PublishParams, state: ContainerState, hooks: Hooks): Promise<PublishResult> {
   const creationId = state.parent!;
+  // Persist the container id BEFORE the risky call so an orphaned operation can be reconciled (contract 1.13.9).
   hooks.setReconcile({ creation_id: creationId });
+  reportProgress('Publishing');
   let mediaId: string | undefined;
   try {
     mediaId = (await rt.graph.post<{ id?: string }>(`/${rt.ig}/media_publish`, { creation_id: creationId })).id;

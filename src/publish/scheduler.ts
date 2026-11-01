@@ -3,7 +3,7 @@ import type { AppContext } from '../context.js';
 import { AppError, isAppError } from '../errors.js';
 import { cleanupStaging, deleteStagedByOwner, refreshStagedExpiry, stageFile } from '../media-host/index.js';
 import { errorMessage, redactDeep } from '../redact.js';
-import { makeActionContext, newOperationId, type ErrorObject } from '../safety/index.js';
+import { isShuttingDown, makeActionContext, newOperationId, startHeartbeat, trackInflight, type ErrorObject } from '../safety/index.js';
 import { ensureContainers, isPollTimeout, publishContainer, resolveStaged, emptyState, type Runtime } from './execute.js';
 import type { ContainerState, PublishParams, StagedTokens } from './types.js';
 
@@ -230,6 +230,15 @@ async function reconcileAttempted(ctx: AppContext, job: JobRow, row: (s: JobStat
     updateJob(ctx, job.id, { operation_id: id });
     return id;
   })();
+  const stopHeartbeat = startHeartbeat(ctx, opId);
+  try {
+    return await reconcileAttemptedInner(ctx, job, opId, creationId, row);
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+async function reconcileAttemptedInner(ctx: AppContext, job: JobRow, opId: string, creationId: string | null | undefined, row: (s: JobStatus, a: SchedulerJobResult['action'], e?: ErrorObject | null) => SchedulerJobResult): Promise<SchedulerJobResult> {
   let status: string | null = null;
   if (creationId) {
     try {
@@ -301,6 +310,7 @@ async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobRes
   }
   updateJob(ctx, job.id, { attempts: true });
   const operationId = opId;
+  const stopHeartbeat = startHeartbeat(ctx, operationId);
 
   try {
     const actx = makeActionContext(ctx, job.account, job.approval_id ?? '', operationId);
@@ -359,15 +369,22 @@ async function processJob(ctx: AppContext, job: JobRow): Promise<SchedulerJobRes
     finishOperation(ctx, job, operationId, 'failed', { error: obj }, obj.code);
     deleteStagedByOwner(ctx, job.id);
     return row('failed', 'failed', obj);
+  } finally {
+    stopHeartbeat();
   }
 }
 
 let running = false;
 
 /** One full scheduler pass over jobs in status scheduled/containers_created, `publish_at` ascending. */
-export async function runSchedulerOnce(ctx: AppContext): Promise<{ now: string; jobs: SchedulerJobResult[] }> {
+export function runSchedulerOnce(ctx: AppContext): Promise<{ now: string; jobs: SchedulerJobResult[] }> {
+  // Tracked so a shutdown drain waits for the pass (contract 1.13.10).
+  return trackInflight(schedulerPass(ctx));
+}
+
+async function schedulerPass(ctx: AppContext): Promise<{ now: string; jobs: SchedulerJobResult[] }> {
   const now = ctx.clock.nowIso();
-  if (running) return { now, jobs: [] };
+  if (running || isShuttingDown()) return { now, jobs: [] };
   running = true;
   try {
     const due = ctx.storage.db
@@ -377,6 +394,7 @@ export async function runSchedulerOnce(ctx: AppContext): Promise<{ now: string; 
     const jobs: SchedulerJobResult[] = [];
     const owner = `${process.pid}:${randomBytes(8).toString('hex')}`;
     for (const listed of due) {
+      if (isShuttingDown()) break;
       const skip = (): SchedulerJobResult => ({
         job_id: listed.id, account: listed.account, status_before: listed.status, status_after: listed.status, action: 'skipped', operation_id: listed.operation_id, error: null
       });

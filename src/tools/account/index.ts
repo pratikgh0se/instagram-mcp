@@ -5,6 +5,7 @@ import { AppError } from '../../errors.js';
 import { resolveMatrix } from '../../graph/capabilities.js';
 import { envTokenName } from '../../secrets/index.js';
 import { reconcileOperation, approveApproval } from '../../safety/approve.js';
+import { sweepOrphans } from '../../safety/orphans.js';
 import type { ApprovalRow, OperationRow } from '../../storage/index.js';
 import { accountParam, cursorParam, decodeCursor, encodeCursor, limitParam, parseTimestamp } from '../shared.js';
 import { defineTool, ok, READ_ONLY, READ_ONLY_LOCAL, REMOTE_DESTRUCTIVE, type ToolDef } from '../types.js';
@@ -172,6 +173,7 @@ const getOperation = defineTool({
   },
   annotations: READ_ONLY,
   async handler(ctx, input) {
+    sweepOrphans(ctx);
     const store = ctx.storage;
     let op = store.operations.get(input.id);
     let approval = op?.approval_id ? store.approvals.get(op.approval_id) : store.approvals.get(input.id);
@@ -208,6 +210,7 @@ const listOperations = defineTool({
   },
   annotations: READ_ONLY_LOCAL,
   async handler(ctx, input) {
+    sweepOrphans(ctx);
     const limit = input.limit ?? 25;
     const account = input.account ? ctx.account(input.account).alias : undefined;
     const before = decodeCursor<{ c: string; o: string }>(input.cursor);

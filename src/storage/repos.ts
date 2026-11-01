@@ -97,6 +97,12 @@ export class ApprovalsRepo {
       .run(j(outcome), now, id);
   }
 
+  /** running -> unknown for an orphaned approval (no-op unless still running). */
+  markOrphaned(id: string, outcome: unknown, errorCode: string, now: string): void {
+    this.db.prepare(`UPDATE approvals SET status='unknown', outcome_json=?, error_code=?, finished_at=? WHERE approval_id=? AND status='running'`)
+      .run(j(outcome), errorCode, now, id);
+  }
+
   finish(id: string, status: 'succeeded' | 'failed' | 'unknown' | 'dry_run', outcome: unknown, errorCode: string | null, now: string): void {
     this.db
       .prepare(`UPDATE approvals SET status=?, outcome_json=?, error_code=?, finished_at=? WHERE approval_id=?`)
@@ -139,6 +145,10 @@ export interface OperationRow {
   reconcile: Record<string, unknown> | null;
   error_code: string | null;
   reconciled_at: string | null;
+  /** Real wall-clock instant of the last heartbeat of the executing process (contract 1.13.9). */
+  heartbeat_at: string | null;
+  /** Batch progress saved while executing: { items: [...] }. */
+  data: { items?: unknown[] } | null;
   rowid?: number;
 }
 
@@ -158,6 +168,8 @@ function toOperation(r: Record<string, unknown>): OperationRow {
     reconcile: p<Record<string, unknown>>(r.reconcile_json),
     error_code: (r.error_code as string | null) ?? null,
     reconciled_at: (r.reconciled_at as string | null) ?? null,
+    heartbeat_at: (r.heartbeat_at as string | null) ?? null,
+    data: p<{ items?: unknown[] }>(r.data),
     rowid: r.rowid as number | undefined
   };
 }
@@ -167,8 +179,33 @@ export class OperationsRepo {
 
   create(o: { operation_id: string; approval_id?: string | null; account: string; action: string; target?: string | null; origin?: string; now: string }): void {
     this.db
-      .prepare(`INSERT INTO operations (operation_id, approval_id, account, action, target, origin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,'running',?,?)`)
-      .run(o.operation_id, n(o.approval_id), o.account, o.action, n(o.target), o.origin ?? 'approve', o.now, o.now);
+      .prepare(`INSERT INTO operations (operation_id, approval_id, account, action, target, origin, status, created_at, updated_at, heartbeat_at) VALUES (?,?,?,?,?,?,'running',?,?,?)`)
+      .run(o.operation_id, n(o.approval_id), o.account, o.action, n(o.target), o.origin ?? 'approve', o.now, o.now, new Date().toISOString());
+  }
+
+  /** Refresh the heartbeat (real wall clock) of a still-running operation. */
+  heartbeat(id: string): void {
+    this.db.prepare(`UPDATE operations SET heartbeat_at=? WHERE operation_id=? AND status='running'`).run(new Date().toISOString(), id);
+  }
+
+  running(): OperationRow[] {
+    return this.db.prepare(`SELECT rowid, * FROM operations WHERE status='running'`).all().map((r) => toOperation(r as Record<string, unknown>));
+  }
+
+  /** Save per-item progress of a batch so an orphaned batch keeps its finished items. */
+  setItems(id: string, items: unknown[]): void {
+    this.db.prepare(`UPDATE operations SET data=? WHERE operation_id=?`).run(j({ items }), id);
+  }
+
+  /**
+   * Orphan transition, atomic compare-and-set on status 'running' AND the stale heartbeat (NULL-safe).
+   * Returns true only for the caller that performed the transition.
+   */
+  markOrphaned(id: string, staleHeartbeat: string | null, outcome: unknown, errorCode: string, now: string): boolean {
+    const res = this.db
+      .prepare(`UPDATE operations SET status='unknown', outcome_json=?, error_code=?, updated_at=?, finished_at=? WHERE operation_id=? AND status='running' AND heartbeat_at IS ?`)
+      .run(j(outcome), errorCode, now, now, id, staleHeartbeat);
+    return Number(res.changes) === 1;
   }
 
   /** Get by operation id, falling back to approval id. */

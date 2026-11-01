@@ -1,5 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { AppContext } from './context.js';
 import { AppError, isAppError } from './errors.js';
@@ -7,6 +7,8 @@ import { errorMessage, redact, redactDeep } from './redact.js';
 import { allTools, registerAll } from './tools/index.js';
 import type { ToolDef } from './tools/types.js';
 import { elicitorFromServer, withElicitor } from './safety/elicit.js';
+import { isShuttingDown, trackInflight } from './safety/inflight.js';
+import { createProgressReporter, withProgress } from './safety/progress.js';
 
 export const SERVER_NAME = 'instagram-mcp';
 
@@ -81,10 +83,25 @@ export function buildServer(ctx: AppContext): Server {
   const descriptors = listToolDescriptors();
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: descriptors as never }));
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
+    // Shutdown drain (contract 1.13.10): no new calls once the process is shutting down.
+    if (isShuttingDown()) throw new McpError(ErrorCode.InternalError, 'The server is shutting down and accepts no new tool calls.');
     const tool = byName.get(req.params.name);
     if (!tool) return errorResult(new AppError('INVALID_INPUT', `Unknown tool "${req.params.name}".`));
-    return await withElicitor(elicitorFromServer(server), () => runTool(ctx, tool, req.params.arguments));
+    const run = (): Promise<CallToolResult> => withElicitor(elicitorFromServer(server), () => runTool(ctx, tool, req.params.arguments));
+    if (tool.name !== 'instagram_approve') return await run();
+
+    // instagram_approve: tracked for the shutdown drain, and progress notifications when the client sent a progressToken (1.13.11).
+    const token = req.params._meta?.progressToken;
+    if (token === undefined) return await trackInflight(run());
+    const { reporter, stop } = createProgressReporter((n) =>
+      extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: n.progress, ...(n.total !== undefined ? { total: n.total } : {}), message: n.message } })
+    );
+    try {
+      return await trackInflight(withProgress(reporter, run));
+    } finally {
+      stop();
+    }
   });
   return server;
 }

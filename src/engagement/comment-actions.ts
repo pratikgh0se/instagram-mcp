@@ -113,6 +113,7 @@ export function registerCommentActions(): void {
           }
         }
         items.push(item);
+        actx.saveItems(items);
       }
       const count = (s: string): number => items.filter((i) => i.status === s).length;
       return { items, total: items.length, succeeded: count('succeeded'), failed: count('failed'), unknown: count('unknown') };

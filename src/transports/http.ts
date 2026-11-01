@@ -4,7 +4,9 @@ import type { AddressInfo } from 'node:net';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { AppContext } from '../context.js';
+import { drainMs } from '../config/index.js';
 import { AppError } from '../errors.js';
+import { beginShutdown, createShutdownTrigger, waitForDrain } from '../safety/inflight.js';
 import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { buildServer } from '../server.js';
@@ -267,9 +269,11 @@ export async function startHttpServer(ctx: AppContext, opts: HttpOptions): Promi
 
 export async function runHttp(ctx: AppContext, opts: HttpOptions): Promise<void> {
   const handle = await startHttpServer(ctx, opts);
-  await new Promise<void>((resolve) => {
-    const stop = (): void => { handle.close().finally(resolve); };
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-  });
+  const shutdown = createShutdownTrigger();
+  await shutdown.first;
+  // Contract 1.13.10: refuse new calls, let in-flight approves finish, then close.
+  beginShutdown();
+  await waitForDrain(drainMs());
+  shutdown.dispose();
+  await handle.close().catch(() => undefined);
 }

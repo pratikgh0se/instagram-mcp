@@ -6,6 +6,7 @@ import { errorMessage, redactDeep } from '../redact.js';
 import type { ApprovalRow, OperationRow } from '../storage/index.js';
 import { bindingHash, makeActionContext, type PlannedCall } from './approvals.js';
 import { currentElicitor } from './elicit.js';
+import { startHeartbeat, sweepOrphans } from './orphans.js';
 import { assertPolicyAllows } from './policy.js';
 import { summarizeApproval } from './summary.js';
 import { getAction } from './registry.js';
@@ -67,6 +68,7 @@ function resultFromStored(row: ApprovalRow, replayed: boolean): ApproveResult {
 /** instagram_approve: execute a pending approval exactly once (spec 2.4, contract 1.13). */
 export async function approveApproval(ctx: AppContext, approvalId: string): Promise<ApproveResult> {
   const store = ctx.storage;
+  sweepOrphans(ctx, approvalId);
   const row = store.approvals.get(approvalId);
   if (!row) {
     throw new AppError('APPROVAL_NOT_FOUND', `No approval with id ${approvalId}.`, { action: 'Run the matching instagram_preflight_* tool again.' });
@@ -155,6 +157,7 @@ export async function approveApproval(ctx: AppContext, approvalId: string): Prom
   }
 
   const actx = makeActionContext(ctx, row.account, approvalId, operationId);
+  const stopHeartbeat = startHeartbeat(ctx, operationId);
   try {
     const raw = redactDeep((await spec.execute(actx, row.params)) ?? {});
     const items = Array.isArray((raw as { items?: unknown }).items) ? ((raw as { items: unknown[] }).items) : undefined;
@@ -176,6 +179,8 @@ export async function approveApproval(ctx: AppContext, approvalId: string): Prom
     return resultFromStored(store.approvals.get(approvalId)!, false);
   } catch (error) {
     return recordFailure(ctx, row, operationId, error);
+  } finally {
+    stopHeartbeat();
   }
 }
 

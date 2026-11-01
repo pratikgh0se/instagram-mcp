@@ -7,6 +7,7 @@ import { registerSecret } from '../redact.js';
 import { GLOBAL_SCOPE } from '../secrets/index.js';
 import { acquireLease, LEASE_RENEW_MS } from '../daemon/lease.js';
 import { listJobs } from '../safety/registry.js';
+import { sweepOrphans } from '../safety/orphans.js';
 import { resolveHttpHost, runHttp } from '../transports/http.js';
 import { runStdio } from '../transports/stdio.js';
 import { registerAll, packageVersion } from '../server.js';
@@ -31,6 +32,9 @@ export async function serve(argv: string[]): Promise<number> {
   });
   const ctx = createContext({ mode: values.http ? 'http' : 'stdio' });
   registerAll(ctx);
+  // Contract 1.13.9: before accepting requests, mark operations whose process died as unknown (no Graph requests).
+  const orphaned = sweepOrphans(ctx);
+  if (orphaned > 0) ctx.log.warn(`marked ${orphaned} orphaned operation(s) unknown`);
   if (values.http) {
     const port = values.port !== undefined ? Number(values.port) : ctx.config.http.port;
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw usage('--port must be an integer 0-65535.');

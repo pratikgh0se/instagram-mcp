@@ -126,6 +126,8 @@ The server refuses to start in HTTP mode without a stored bearer, and refuses a 
 
 Tip: set your client to ask before running `instagram_approve` and let everything else run. That one tool is the only one that changes Instagram.
 
+Long approves: publishing a large carousel (up to 20 items) can take several minutes while Instagram processes each container. `instagram_approve` sends MCP progress notifications whenever the client supplies a progress token, so if your client has a request timeout (many default to 60 s), enable reset-on-progress (`resetTimeoutOnProgress` in the MCP SDK) or raise the timeout for that tool. If a client kills the server mid-approve, the operation is marked `unknown` the next time the server starts or any operation is looked up; use `instagram_get_operation` to reconcile it. On shutdown (stdin closed, SIGTERM, SIGINT) the server waits up to `INSTAGRAM_MCP_DRAIN_MS` (default 5 minutes) for in-flight approves; a second signal exits immediately.
+
 ## How writes work
 
 Every Instagram-side write goes through two steps.

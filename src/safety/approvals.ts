@@ -131,6 +131,9 @@ export function makeActionContext(ctx: AppContext, accountAlias: string, approva
     operation_id: operationId,
     setReconcile: (data: Record<string, unknown>) => {
       if (operationId) ctx.storage.operations.setReconcile(operationId, data, ctx.clock.nowIso());
+    },
+    saveItems: (items: unknown[]) => {
+      if (operationId) ctx.storage.operations.setItems(operationId, items);
     }
   }) as ActionContext;
 }

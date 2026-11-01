@@ -12,6 +12,8 @@ export interface ActionContext extends AppContext {
   operation_id: string;
   /** Persist reconciliation hints (e.g. { creation_id }) as soon as they exist, before the risky call. */
   setReconcile(data: Record<string, unknown>): void;
+  /** Persist the per-item results of a batch so far (kept if the process dies; contract 1.13.9). */
+  saveItems(items: unknown[]): void;
 }
 
 export interface ActionSpec<P = any> {

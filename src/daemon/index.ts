@@ -1,8 +1,10 @@
 import { parseArgs } from 'node:util';
 import { listAccounts } from '../config/index.js';
 import { createContext, type AppContext } from '../context.js';
+import { drainMs } from '../config/index.js';
 import { AppError } from '../errors.js';
 import { errorMessage } from '../redact.js';
+import { beginShutdown, createShutdownTrigger, sweepOrphans, waitForDrain } from '../safety/index.js';
 import { listJobs, registerJob, type JobSpec } from '../safety/registry.js';
 import { registerAll } from '../server.js';
 import { resolveHttpHost, startHttpServer, type HttpHandle } from '../transports/http.js';
@@ -77,6 +79,9 @@ export async function runDaemon(argv: string[]): Promise<number> {
       });
     }
 
+    const orphaned = sweepOrphans(ctx);
+    if (orphaned > 0) ctx.log.warn(`marked ${orphaned} orphaned operation(s) unknown`);
+
     const wantMcp = Boolean(values.http);
     const webhooksOn = ctx.config.webhooks.enabled;
     if (wantMcp || webhooksOn) {
@@ -98,6 +103,7 @@ export async function runDaemon(argv: string[]): Promise<number> {
 function supervise(ctx: AppContext, lease: LeaseHandle, handle: HttpHandle | undefined): Promise<number> {
   return new Promise<number>((resolve) => {
     let stopping = false;
+    const shutdown = createShutdownTrigger();
     const running: RunningJob[] = listJobs().map((spec) => ({ spec }));
 
     const schedule = (job: RunningJob, delay: number): void => {
@@ -119,10 +125,15 @@ function supervise(ctx: AppContext, lease: LeaseHandle, handle: HttpHandle | und
       stopping = true;
       clearInterval(renewTimer);
       for (const job of running) if (job.timer) clearTimeout(job.timer);
-      const pending = running.map((j) => j.inflight).filter((p): p is Promise<void> => Boolean(p));
-      if (pending.length) {
-        await Promise.race([Promise.allSettled(pending), new Promise((r) => setTimeout(r, SHUTDOWN_GRACE_MS))]);
-      }
+      // Contract 1.13.10: refuse new calls; wait for in-flight approves and scheduler passes (up to INSTAGRAM_MCP_DRAIN_MS),
+      // and for the other jobs up to the short grace period.
+      beginShutdown();
+      const others = running.filter((j) => j.spec.name !== 'scheduler').map((j) => j.inflight).filter((p): p is Promise<void> => Boolean(p));
+      await Promise.all([
+        waitForDrain(drainMs()),
+        others.length ? Promise.race([Promise.allSettled(others), new Promise((r) => setTimeout(r, SHUTDOWN_GRACE_MS))]) : Promise.resolve()
+      ]);
+      shutdown.dispose();
       await handle?.close().catch(() => undefined);
       resolve(code);
     };
@@ -136,7 +147,6 @@ function supervise(ctx: AppContext, lease: LeaseHandle, handle: HttpHandle | und
       }
     }, LEASE_RENEW_MS);
 
-    process.once('SIGINT', () => void stop(0));
-    process.once('SIGTERM', () => void stop(0));
+    void shutdown.first.then(() => stop(0));
   });
 }

@@ -1,5 +1,5 @@
-// Versioned, append-only migrations. Version 1 creates every table the v1 design needs; later units
-// must not alter it (every table carries a free-form `data` JSON column for unforeseen fields).
+// Versioned, append-only migrations. Version 1 creates every table the v1 design needs. Later versions are
+// strictly additive (ADD COLUMN) so an existing state.sqlite keeps working.
 // All timestamps are ISO-8601 UTC TEXT (lexicographically sortable).
 export interface Migration { version: number; sql: string }
 
@@ -206,5 +206,10 @@ CREATE TABLE locks (
   data       TEXT
 );
 `
+  },
+  {
+    // Orphan detection (contract 1.13.9): wall-clock heartbeat of the process executing a `running` operation.
+    version: 2,
+    sql: `ALTER TABLE operations ADD COLUMN heartbeat_at TEXT;`
   }
 ];
