@@ -56,12 +56,11 @@ export function resolveMatrix(ctx: AppContext, account: ResolvedAccount): Record
 }
 
 function unavailable(account: ResolvedAccount, feature: string, reason?: string): AppError {
-  const other: LoginPath = account.login === 'instagram' ? 'facebook' : 'instagram';
   const row = MATRIX[feature];
-  const otherWorks = row && row[other] !== 'no';
+  const others = (['instagram', 'facebook', 'unified'] as LoginPath[]).filter((l) => l !== account.login && row && row[l] === 'yes');
   return new AppError('CAPABILITY_UNAVAILABLE', `${row?.description ?? feature} is not available on the ${account.login} login path${reason ? ` (${reason})` : ''}.`, {
-    action: otherWorks
-      ? `Use an account configured with login "${other}" (Facebook Login for Business, needs page_id) for this feature.`
+    action: others.length
+      ? `Use an account configured with login ${others.map((l) => `"${l}"`).join(' or ')} for this feature (facebook needs page_id).`
       : 'This feature is not available through the official API for this account.',
     details: { feature, login: account.login }
   });

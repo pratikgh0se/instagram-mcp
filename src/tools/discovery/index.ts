@@ -103,7 +103,7 @@ const searchHashtag = defineTool({
     }
     const graph = ctx.graph(account);
     const igId = await graph.igUserId();
-    const res = await graph.get<{ data?: Array<{ id?: string }> }>('/ig_hashtag_search', { user_id: igId, q: input.query });
+    const res = await withProbe(ctx, account, 'hashtag_search', () => graph.get<{ data?: Array<{ id?: string }> }>('/ig_hashtag_search', { user_id: igId, q: input.query }));
     const id = res.data?.[0]?.id;
     if (!id) throw new AppError('NOT_FOUND', `No hashtag found for "${name}".`);
     let used = state.used.length;
@@ -139,11 +139,11 @@ const getHashtagMedia = defineTool({
     const graph = ctx.graph(account);
     const igId = await graph.igUserId();
     const edge = (input.type ?? 'top') === 'top' ? 'top_media' : 'recent_media';
-    const page = await graph.list<Record<string, unknown>>(
+    const page = await withProbe(ctx, account, 'hashtag_search', () => graph.list<Record<string, unknown>>(
       `/${input.hashtag_id}/${edge}`,
       { user_id: igId, fields: HASHTAG_MEDIA_KEYS.join(',') },
       { limit: input.limit ?? 25, cursor: input.cursor }
-    );
+    ));
     const items = page.data.map((m) => Object.fromEntries(HASHTAG_MEDIA_KEYS.map((k) => [k, m[k] ?? null])));
     return ok({ items, next_cursor: page.next_cursor }, `${items.length} ${edge === 'top_media' ? 'top' : 'recent'} post(s).`);
   }
