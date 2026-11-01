@@ -1,6 +1,6 @@
 # Live end-to-end test checklist
 
-Run this together (owner and orchestrator) on the test account after [SETUP.md](SETUP.md) section E passes `doctor`. The point is to confirm the "unverified upstream facts" at the bottom and to see every tool work against real Meta.
+Run this together (owner and orchestrator) on the test account after [SETUP.md](SETUP.md) section J passes `doctor`. The point is to confirm the "unverified upstream facts" at the bottom and to see every tool work against real Meta.
 
 Rules for the run:
 
