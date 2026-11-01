@@ -1,6 +1,6 @@
 # youtube-mcp: reusable patterns for instagram-mcp
 
-Source: `/Users/pratik/CodeBase/youtube-mcp` (v0.3.0, MIT, dev repo; public clone at `/Users/pratik/CodeBase/youtube-mcp-public`). Read-only sweep, 2026-10-29. Vault notes used for orientation only, then checked against code. Where the vault and code disagree, the code wins (see "Vault drift" at the end).
+Source: the maintainer's `youtube-mcp` repo (v0.3.0, MIT; dev repo and its public clone). Read-only sweep, 2026-10-29. Vault notes used for orientation only, then checked against code. Where the vault and code disagree, the code wins (see "Vault drift" at the end).
 
 ## TL;DR
 
