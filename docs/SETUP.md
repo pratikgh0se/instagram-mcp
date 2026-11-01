@@ -2,7 +2,7 @@
 
 This guide takes you from nothing to a working server on a fresh Instagram test account. Do the sections in order; sections F to H are optional.
 
-Honesty note: Meta changes its dashboard wording often, and this guide was written from Meta's published docs (accessed 2026-10-29), not from a live click-through. Steps marked "(Meta's UI may label this differently)" could not be confirmed from a 2025-2026 source. If a label differs, look for the closest one. Section J lists common errors and fixes.
+Honesty note: Meta changes its dashboard wording often. The Facebook Login steps (Page, app creation, permissions, Graph API Explorer, `auth set-token`) were confirmed live on 2026-11-01. The Instagram Login steps and anything else were written from Meta's published docs (accessed 2026-10-29), not from a live click-through. Steps marked "(Meta's UI may label this differently)" could not be confirmed from a 2025-2026 source. If a label differs, look for the closest one. Section J lists common errors and fixes.
 
 ## Contents
 
@@ -59,30 +59,31 @@ You should see: a Professional dashboard on your profile, and an Insights button
 
 Facebook Login only:
 
-5. Create a Facebook Page you control (facebook.com, **Pages**, **Create new Page**). Any name and category is fine.
-6. Link the Instagram account to the Page. In the Instagram app: **Edit profile**, **Page** (under Public business information), **Connect or create** and choose the Page. Alternatively, in the Facebook Page settings, **Linked accounts**, **Instagram**, **Connect account**. (Meta's UI may label this differently.)
-7. Note the Page ID: on the Page, **About** (or **Page transparency**), then copy the **Page ID**. Keep it for section E.
+5. Create a Facebook Page you control (facebook.com, **Pages**, **Create new Page**). Choose **Public Page**, not "Upgrade your existing profile". Any name and category is fine.
+6. Link the Instagram account from the Facebook Page: **Settings**, **Linked accounts**, **Instagram**, **Connect account** (confirmed 2026-11-01; Meta's UI may label this differently). Linking requires the Instagram account to be Professional and public.
+7. Get the Page ID in section D4 (Graph API Explorer, `GET me/accounts`). Do not copy the number from the `facebook.com/profile.php?id=...` address bar: in the live test that number was NOT the Page ID.
 
 ## C. Create the Meta app
 
 You need a Meta developer account (developers.facebook.com) logged in with a Facebook user. That user becomes the app Administrator. This can be your normal Facebook login; it does not have to be the Instagram test account.
 
 1. Open `https://developers.facebook.com/apps` and click **Create App** (top right). If you have no apps, the button reads **Create First App**. (Meta's UI may label this differently.)
-2. If asked to connect a business portfolio, you can skip it for now. It is only needed to publish the app, and you are not publishing it.
-3. Use case: select **Other**, then **Next**. Meta's docs name this as the only use case listed for Instagram access. An older flow offered "Manage messaging & content on Instagram"; if you see that instead, it is also fine. (Meta's UI may label this differently.)
-4. App type: select **Business**, then **Next**. The Instagram product needs a Business app.
-5. Enter an app name (anything) and your contact email, then **Create app**.
-6. In the app dashboard, scroll to the **Instagram** product and click **Set up**.
-   - Instagram Login: this adds **API setup with Instagram login** to the left menu.
-   - Facebook Login: use **API setup with Facebook login** instead (Meta's docs name it for Page-linked accounts).
+2. The create-app wizard has five steps (confirmed 2026-11-01 on the Facebook Login path): **App details**, **Use cases**, **Business**, **Requirements**, **Overview**.
+3. App details: enter an app name (anything) and your contact email. The name must not contain "Instagram", "IG", "Facebook" or "Meta".
+4. Use cases: tick **Manage messaging & content on Instagram** AND **Manage everything on your Page**. The second one is only there so the token can read the linked Page. The old **Other** option is labelled "going away soon"; do not use it. (Meta's UI may label this differently.)
+5. Business: choose **I don't want to connect a business portfolio yet**. A portfolio is not needed in development mode.
+6. Requirements showed nothing to fill in. Continue to **Overview** and click **Create app**.
+7. In the app dashboard, click **Customize the Manage messaging & content on Instagram use case**. The left list shows **Permissions and features**, **API setup with Unified login** and **API setup with Facebook login**.
+   - Facebook Login: use **API setup with Facebook login**. Ignore **API setup with Unified login** (it needs a business portfolio).
+   - Instagram Login: use the Instagram-login API setup entry (not live-tested; label may differ).
 
-You should see: **Instagram** in the left menu with an API setup page.
+You should see: the use case page with the left list above.
 
 ### Add the test account
 
-7. Open **App roles**, **Roles** in the left menu (or **Instagram**, **API setup with Instagram login**, section "Generate access tokens"). Add your Instagram test account. You will be asked to log in to Instagram. (Meta's UI may label this differently; Meta's current docs do not use the name "Instagram Tester".)
-8. If the dashboard shows the account as pending, accept the invite from the Instagram side. Older Meta tester flows place it in Instagram, **Settings**, **Apps and Websites**, **Tester Invites** (or web: `instagram.com/accounts/manage_access/`), then **Accept**. (Meta's UI may label this differently; this path comes from older Instagram Basic Display guides and is not confirmed for the current platform.)
-9. If your Facebook user is not the same person as the Instagram account, also add the Facebook user of the test account to **App roles** as Administrator, Developer or Tester.
+8. Open **App roles**, **Roles** in the left menu (or **Instagram**, **API setup with Instagram login**, section "Generate access tokens"). Add your Instagram test account. You will be asked to log in to Instagram. (Meta's UI may label this differently; Meta's current docs do not use the name "Instagram Tester".)
+9. If the dashboard shows the account as pending, accept the invite from the Instagram side. Older Meta tester flows place it in Instagram, **Settings**, **Apps and Websites**, **Tester Invites** (or web: `instagram.com/accounts/manage_access/`), then **Accept**. (Meta's UI may label this differently; this path comes from older Instagram Basic Display guides and is not confirmed for the current platform.)
+10. If your Facebook user is not the same person as the Instagram account, also add the Facebook user of the test account to **App roles** as Administrator, Developer or Tester.
 
 You should see: the Instagram account listed with a status that is not "pending".
 
@@ -91,6 +92,8 @@ You should see: the Instagram account listed with a status that is not "pending"
 Leave the app in Development mode. Meta's App Review page says Standard Access (apps serving only accounts you own or manage) does not need App Review. Accounts with a role on the app can use the permissions below without review. What is not confirmed from the docs: exactly which features (webhooks, DMs, hashtags) work in development mode for role holders. [TESTING-LIVE.md](TESTING-LIVE.md) is the run that confirms it, and the server falls back gracefully (inbox polls if webhooks do not arrive).
 
 ### Permissions to select
+
+Facebook Login, in the dashboard (confirmed 2026-11-01): under **API setup with Facebook login**, click **Add required content permissions** and **Add required messaging permissions**. Then in **Permissions and features** click **Add** on `instagram_manage_comments`, `instagram_manage_contents`, `instagram_manage_insights` and **Instagram Public Content Access**. Do NOT add the `instagram_business_*` permissions: those belong to the Instagram Login path. The status then shows **Ready for testing**.
 
 Instagram Login (`instagram_business_*`; the dashboard adds these by default when you set up the product):
 
@@ -116,9 +119,9 @@ Facebook Login (`instagram_*` plus Page scopes; you select these when generating
 | `pages_show_list` | listing the Page |
 | `pages_read_engagement` | reading the Page's linked account, business discovery |
 | `pages_manage_metadata` | webhook subscriptions on the Page (only if you use webhooks) |
-| `business_management` | only if Meta asks for it (not confirmed) |
+| `business_management` | add it in Graph API Explorer (it was part of the permission set used in the live test) |
 
-Hashtag search additionally needs Meta's "Instagram Public Content Access" feature, which Meta normally grants through App Review. It may not work in development mode. (Not confirmed; the live test checks it.)
+Hashtag search additionally needs Meta's "Instagram Public Content Access" feature (add it in **Permissions and features**, see above). Meta normally grants it through App Review; whether hashtag search returns data in development mode is not confirmed.
 
 ### OAuth redirect URL
 
@@ -146,10 +149,11 @@ You can sanity-check the token with curl (this puts the token in your shell hist
 
 1. Open `https://developers.facebook.com/tools/explorer/`.
 2. In the right panel choose your app in **Meta App**.
-3. Under **User or Page** choose **User Token**.
-4. In **Permissions**, add every permission from the Facebook Login table above, then click **Generate Access Token**.
-5. A Facebook dialog asks which Pages and Instagram accounts to give access to. Select your test Page and Instagram account, then continue.
-6. Copy the token from the **Access Token** field.
+3. Set the host dropdown (next to the request URL) to `graph.facebook.com`. Do not use `graph.instagram.com`: it fails with "Invalid OAuth access token - Cannot parse access token".
+4. Under **User or Page** choose **User Token**.
+5. In **Permissions**, add: `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`, `instagram_manage_insights`, `instagram_manage_messages`, `instagram_manage_contents`, `pages_show_list`, `pages_read_engagement`, `business_management`. Then click **Generate Access Token**.
+6. A Facebook dialog asks which Pages and Instagram accounts to give access to. Select your test Page and Instagram account, then continue.
+7. Copy the token from the **Access Token** field.
 
 This is a short-lived user token. You do not do the long-lived and Page token steps by hand: `instagram-mcp auth set-token` exchanges it for a long-lived user token, then fetches the Page token using `page_id` (Meta's UI may label this differently). It needs the app id in the config and the app secret stored first (section E).
 
@@ -158,7 +162,7 @@ This is a short-lived user token. You do not do the long-lived and Page token st
 | Id | How to get it |
 |---|---|
 | `ig_user_id` | Filled in for you. `auth set-token` reads it from Meta and saves it to the config. |
-| `page_id` | Facebook Login only. Section B step 7, or Graph API Explorer: `GET me/accounts?fields=id,name,instagram_business_account` shows each Page `id` and the linked `instagram_business_account.id`. |
+| `page_id` | Facebook Login only. In Graph API Explorer (host `graph.facebook.com`) run `GET me/accounts?fields=id,name,instagram_business_account`; it shows each Page `id` and the linked `instagram_business_account.id` (the `ig_user_id`). The number in the `facebook.com/profile.php?id=...` address bar is NOT the Page ID (it differed in the live test). |
 
 ## E. Install and configure instagram-mcp
 
@@ -225,7 +229,7 @@ Requires Node.js 22.13 or newer (`node --version`).
 
    Paste the token and press Enter. To pipe it instead: `pbpaste | instagram-mcp auth set-token --account test`.
 
-   You should see one JSON line with `"alias":"test"`, `"ig_user_id":"..."`, `"username":"..."`, an `expires_at` (Instagram path; the Facebook path shows the Page token's expiry or null) and a `notes` array. For Facebook Login, `"exchanged":true` means the long-lived exchange worked. Notes such as "Long-lived user-token exchange failed" mean the app id or app secret is missing or wrong; the token was stored as given. Fix and run it again.
+   You should see one JSON line with `"alias":"test"`, `"ig_user_id":"..."`, `"username":"..."`, an `expires_at` (Instagram path: about 60 days out; Facebook path: `null`, because a Page token derived from a long-lived user token does not expire) and a `notes` array. `username` is looked up from Meta on both paths. For Facebook Login, `"exchanged":true` (seen in the live test) means the long-lived exchange worked. Notes such as "Long-lived user-token exchange failed" mean the app id or app secret is missing or wrong; the token was stored as given. Fix and run it again.
 
 6. Run the health check.
 
@@ -255,6 +259,13 @@ Requires Node.js 22.13 or newer (`node --version`).
 8. Check auth status any time: `instagram-mcp auth status --check` prints JSON with token presence, source, expiry and whether `/me` succeeded.
 
 Instagram Login tokens last 60 days. The daemon (section G) refreshes them daily when due; without the daemon, the server refreshes lazily when a tool is used. If a token expires, generate a new one and run `auth set-token` again.
+
+### Messaging and mentions: what to expect in development mode (confirmed 2026-11-01, Facebook Login)
+
+- Connected tools, **Allow access to messages** is a phone-app-only setting. It was absent on the tester's account and app version.
+- Reading DMs (`instagram_list_conversations`) may return an empty list in development mode for senders who have no role on the app, even when a DM exists. Sending (private replies to a comment) worked.
+- A DM from someone who does not follow the account lands in **Message requests**, not the main inbox.
+- Replying to mentions (`instagram_preflight_reply_mention`) only works for @mentions written in a caption or comment, not for photo tags. Ask the poster to add `@<username>` to the caption.
 
 ## F. Optional: media host for local files (Cloudflare Tunnel)
 
@@ -365,7 +376,8 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | `AUTH_REQUIRED` | No token stored for the account | `instagram-mcp auth set-token --account <alias>` |
 | Meta code 190 (`TOKEN_EXPIRED` or `AUTH_FAILED`) | Token expired, revoked, or user changed password | Generate a new token (section D) and run `auth set-token` again |
 | Meta code 190 subcode 463 or 467 | Token expired or session invalidated | Same as above |
-| Meta code 10 or 200-299 (`MISSING_PERMISSION`) | Permission not selected or not granted | Add the permission (section C table), regenerate the token, accept it for the right account |
+| Meta code 10 or 200-299 (`MISSING_PERMISSION`) | Permission not selected or not granted (code 10 with "story media" or "not mentioned" in the message is not a permission problem: see the next rows) | Add the permission (section C table), regenerate the token, accept it for the right account |
+| `INVALID_INPUT` on a mention reply, Meta "User is not mentioned in the caption" | The user was only photo-tagged, not @mentioned in a caption or comment | Ask the poster to add `@<username>` to the caption |
 | Meta code 100 (`INVALID_INPUT`) | Bad parameter, or a field not supported for this account | Read `details.meta`; check media specs and `account_type` |
 | Meta code 4, 17, 32, 613, 80002 (`RATE_LIMITED`) | Rate limit hit | Wait; `instagram_get_rate_limits` shows usage |
 | Meta code 9 / subcode 2207042 (`PUBLISH_QUOTA_EXHAUSTED`) | Daily publishing limit used | Wait for the window; the limit is read at runtime |

@@ -8,9 +8,21 @@ import type { AppContext } from '../context.js';
 import { writePrivateFile, type ResolvedAccount } from '../config/index.js';
 import { AppError, isAppError } from '../errors.js';
 import { redact } from '../redact.js';
+import { isStoryCommentError, stripCommentFields } from '../graph/errors.js';
+import type { GraphClient } from '../graph/client.js';
 
 export const MEDIA_LIST_FIELDS =
   'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,thumbnail_url,media_url,is_comment_enabled';
+
+/** GET one media node; on Meta's "story media" comment rejection retry once without comment fields (they come back absent -> null). */
+export async function getMediaNode<T = Record<string, unknown>>(graph: GraphClient, mediaId: string, fields: string): Promise<T> {
+  try {
+    return await graph.get<T>(`/${mediaId}`, { fields });
+  } catch (error) {
+    if (!isStoryCommentError(error)) throw error;
+    return graph.get<T>(`/${mediaId}`, { fields: stripCommentFields(fields) });
+  }
+}
 
 // ---------- media_index helpers ----------
 export interface IndexedMedia {
@@ -181,7 +193,7 @@ export async function downloadMedia(
   const includeChildren = opts.include_children ?? true;
   const includeThumb = opts.include_thumbnail ?? true;
   const graph = ctx.graph(account);
-  const media = await graph.get<MediaObject>(`/${mediaId}`, { fields: DOWNLOAD_FIELDS });
+  const media = await getMediaNode<MediaObject>(graph, mediaId, DOWNLOAD_FIELDS);
   const id = typeof media.id === 'string' ? media.id : mediaId;
   const username = sanitizeName(media.username || account.alias);
   const ts = media.timestamp ? new Date(media.timestamp) : null;

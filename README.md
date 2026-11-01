@@ -41,6 +41,12 @@ The official API does not offer these, so this server does not either.
 - Run partnership ads (that is the Marketing API).
 - Use Creator Marketplace (brand-side and requires App Review).
 
+## Known limitations
+
+- Direct messages in Development mode (facebook login path): listing conversations may return an empty list for senders without an app role, even though a DM exists. Sending private replies works. Probable causes: a dev-mode restriction, or the phone-app-only "Allow access to messages" toggle (absent on some accounts). Observed 2026-11-01; see docs/CONTRACT.md U29.
+- `instagram_get_profile` returns `account_type: null` on the facebook login path (the Graph API does not provide it there); a warning says so.
+- Mention replies work only for caption or comment @mentions, not photo tags.
+
 ## Which login path
 
 Each account is configured with one of two login paths. Both use only official endpoints.

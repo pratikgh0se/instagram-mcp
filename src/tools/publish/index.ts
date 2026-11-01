@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import { AppError } from '../../errors.js';
+import { getMediaNode } from '../../archive/index.js';
 import { requireCapability } from '../../graph/capabilities.js';
 import { registerPublishActions, registerPublishJobs, localFingerprint } from '../../publish/actions.js';
 import { plannedCalls } from '../../publish/plan.js';
@@ -197,7 +198,7 @@ const preflightDeleteMedia = defineTool({
   async handler(ctx, input) {
     const account = await prologue(ctx, input.account, 'delete_media', 'delete_media');
     const graph = ctx.graph(account);
-    const m = await graph.get<MediaInfo>(`/${input.media_id}`, { fields: 'id,caption,permalink,media_type,media_product_type,timestamp,like_count,comments_count' });
+    const m = await getMediaNode<MediaInfo>(graph, input.media_id, 'id,caption,permalink,media_type,media_product_type,timestamp,like_count,comments_count');
     const preview = {
       media_id: input.media_id, permalink: m.permalink ?? null, caption: m.caption ?? null, media_type: m.media_type ?? null,
       media_product_type: m.media_product_type ?? null, timestamp: m.timestamp ?? null, like_count: m.like_count ?? null, comments_count: m.comments_count ?? null
@@ -228,7 +229,7 @@ const preflightSetComments = defineTool({
   async handler(ctx, input) {
     const account = await prologue(ctx, input.account, 'set_comments_enabled');
     const graph = ctx.graph(account);
-    const m = await graph.get<MediaInfo>(`/${input.media_id}`, { fields: 'id,permalink,is_comment_enabled,media_product_type' });
+    const m = await getMediaNode<MediaInfo>(graph, input.media_id, 'id,permalink,is_comment_enabled,media_product_type');
     const current = typeof m.is_comment_enabled === 'boolean' ? m.is_comment_enabled : null;
     const warnings = current === input.enabled ? [`ALREADY_IN_STATE: comments are already ${input.enabled ? 'enabled' : 'disabled'} on this media.`] : [];
     const ticket = await createApproval(ctx, {

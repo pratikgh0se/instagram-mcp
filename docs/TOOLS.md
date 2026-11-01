@@ -65,7 +65,7 @@ Title: Get profile
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type (account_type is null on the facebook login path).
+Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook login path account_type is always null and warnings says so (the Graph API does not provide it there).
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -150,7 +150,7 @@ Title: Get media
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Details of one media item: caption, type, permalink, counts, URLs, shortcode, alt text, username and carousel children.
+Details of one media item: caption, type, permalink, counts, URLs, shortcode, alt text, username and carousel children. Works for Stories too (comment-related fields are null there).
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|

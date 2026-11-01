@@ -31,6 +31,11 @@ export function mapMetaError(status: number, error: MetaErrorBody | undefined, o
     if (code === 9 && sub === 2207042) return mk('PUBLISH_QUOTA_EXHAUSTED', { action: 'Wait for the 24 h publishing quota window to reset (see instagram_get_rate_limits).' });
     if (code === 10 && sub === 2534022) return mk('MESSAGING_WINDOW_CLOSED', { action: 'The user has not messaged within the allowed window.' });
     if (code === 10 && /enough viewers/i.test(text)) return mk('UPSTREAM_REJECTED');
+    // Code 10 also carries rule violations that are not permission problems (contract 1.7 rows 3a/3b).
+    if (code === 10 && /story media/i.test(text)) return mk('UPSTREAM_REJECTED', { action: 'Stories do not support comments; this call is not valid for story media.' });
+    if (code === 10 && /not mentioned/i.test(text)) {
+      return mk('INVALID_INPUT', { action: 'Only @mentions written in a caption or comment can be replied to; photo tags cannot. Ask the poster to add @<username> to the caption.' });
+    }
     if (code === 9007 || String(sub ?? '').startsWith('2207')) return mk('UPSTREAM_REJECTED');
     if (code === 190 && (sub === 463 || sub === 467)) return mk('TOKEN_EXPIRED', { action: reauth });
     if (code === 190) return mk('AUTH_FAILED', { action: reauth });
@@ -62,4 +67,26 @@ export function looksUnsupported(error: unknown): boolean {
   const code = (error.details?.meta as { code?: number } | undefined)?.code;
   if (code === 3) return true;
   return code === 100 && /unsupported|not supported|does not support/i.test(error.message);
+}
+
+/** True for Meta's "(#10) Comments cannot be made on story media." rejection (comment fields requested on a Story). */
+export function isStoryCommentError(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  const code = (error.details?.meta as { code?: number } | undefined)?.code;
+  return code === 10 && /story media/i.test(error.message);
+}
+
+/** Remove top-level comment-related fields from a Graph `fields` list (brace-aware). */
+export function stripCommentFields(fields: string): string {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of fields) {
+    if (ch === '{') depth++;
+    if (ch === '}') depth--;
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+  }
+  parts.push(cur);
+  const drop = new Set(['comments_count', 'is_comment_enabled', 'comments']);
+  return parts.filter((f) => !drop.has(f.trim().split(/[{.(]/)[0] ?? '')).join(',');
 }

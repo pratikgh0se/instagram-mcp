@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AppContext } from '../../context.js';
-import { backupAccount, downloadMedia, MEDIA_LIST_FIELDS, upsertMediaIndex } from '../../archive/index.js';
+import { backupAccount, downloadMedia, getMediaNode, MEDIA_LIST_FIELDS, upsertMediaIndex } from '../../archive/index.js';
 import { accountParam, cursorParam, limitParam, parseTimestamp } from '../shared.js';
 import { defineTool, LOCAL_WRITE, ok, READ_ONLY, type ToolAnnotations, type ToolDef } from '../types.js';
 
@@ -53,12 +53,12 @@ const listMedia = defineTool({
 const getMedia = defineTool({
   name: 'instagram_get_media',
   title: 'Get media',
-  description: 'Details of one media item: caption, type, permalink, counts, URLs, shortcode, alt text, username and carousel children.',
+  description: 'Details of one media item: caption, type, permalink, counts, URLs, shortcode, alt text, username and carousel children. Works for Stories too (comment-related fields are null there).',
   inputSchema: { account: accountParam, media_id: mediaIdParam },
   annotations: READ_ONLY,
   async handler(ctx, input) {
     const account = ctx.account(input.account);
-    const m = await ctx.graph(account).get<Record<string, unknown>>(`/${input.media_id}`, { fields: GET_FIELDS });
+    const m = await getMediaNode<Record<string, unknown>>(ctx.graph(account), input.media_id, GET_FIELDS);
     const kids = (m.children as { data?: Array<Record<string, unknown>> } | undefined)?.data ?? [];
     const data: Record<string, unknown> = {
       ...pickKeys(m, [...LIST_KEYS, 'is_shared_to_feed', 'shortcode', 'alt_text', 'username']),

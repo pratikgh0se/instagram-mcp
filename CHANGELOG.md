@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
 
 ### Fixed
+- `instagram_get_media` (and download, delete preview, comments toggle preview) now work on Stories: on Meta's "(#10) Comments cannot be made on story media." the call is retried once without comment fields, which come back `null`.
+- Meta code 10 is no longer always `MISSING_PERMISSION`: "story media" maps to `UPSTREAM_REJECTED`, "User is not mentioned in the caption" maps to `INVALID_INPUT` with an action explaining that photo tags cannot be replied to.
+- `auth set-token` always resolves and prints `username` on the facebook path (previously `null` when `ig_user_id` was already configured).
+- `instagram_get_profile` adds a `warnings` entry explaining that `account_type` is unavailable on the facebook login path.
+- Docs: SETUP.md updated from the live facebook-login run (wizard steps, permissions, Explorer host, Page ID); CONTRACT.md records observed facts U28 to U31 (owner can hide own comment, empty conversations in dev mode).
 - Startup now refuses a non-loopback `http.host` without `http.allow_remote` and a non-http(s) `media_host.public_base_url`, regardless of transport.
 - A successful capability probe is no longer cached; only failures cache `no`.
 - `appsecret_proof` values and the app secret are registered with the redactor, and malformed upstream error bodies are scrubbed.

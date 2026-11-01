@@ -313,6 +313,16 @@ export class TokenManager {
       }
       igUserId = page.data.instagram_business_account?.id ?? igUserId;
       if (!igUserId) notes.push(`Page ${account.page_id} has no linked Instagram professional account.`);
+      if (igUserId) {
+        try {
+          const who = await fb.request<{ username?: string }>({
+            path: `/${igUserId}`, query: { fields: 'username' }, token, tokenPlacement: 'header', appSecret
+          });
+          username = who.data.username ?? null;
+        } catch {
+          notes.push('Could not look up the Instagram username (GET /{ig_user_id}?fields=username failed); token stored anyway.');
+        }
+      }
       if (appId && appSecret) {
         try {
           const dbg = await fb.request<{ data?: { scopes?: string[]; expires_at?: number; data_access_expires_at?: number } }>({

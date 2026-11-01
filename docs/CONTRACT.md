@@ -4,6 +4,8 @@ Status: authoritative for black-box behaviour. Derived from `docs/superpowers/sp
 
 Words: MUST/MUST NOT are binding. "Graph request" means an HTTP request the server sends to the Graph base URL (or rupload URL) as seen by the fake server. Paths in this document are written without the version prefix; the wire path is `/{graph_api_version}{path}` (section 1.4).
 
+Amendment 2026-11-01 (first live E2E, facebook path): (a) `instagram_get_media`, `instagram_download_media`, `instagram_preflight_delete_media` and `instagram_preflight_set_comments_enabled` retry once without comment fields when Meta answers code 10 "Comments cannot be made on story media" (2.2); (b) error mapping rows 3a/3b (1.7); (c) `auth set-token` always resolves `username` (3); (d) `instagram_get_profile` returns `warnings` and notes that `account_type` is unavailable on the facebook path (2.1); (e) new observed facts U28 to U30 (7).
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -127,7 +129,7 @@ All 23 codes. `retryable` is the value in the envelope.
 | `AUTH_REQUIRED` | Resolved account has no token in the secrets backend (env var unset/empty). `action` names the env var `INSTAGRAM_MCP_TOKEN_<ALIAS>`. | false |
 | `AUTH_FAILED` | Meta error 190 (not expired subcodes) or HTTP 401 without a Meta error body. | false |
 | `TOKEN_EXPIRED` | Meta error 190 with `error_subcode` 463 or 467. `action` says to re-authenticate. | false |
-| `MISSING_PERMISSION` | Meta error 10 or 200-299 (except the special cases in 1.7). | false |
+| `MISSING_PERMISSION` | Meta error 10 or 200-299 (except the special cases in 1.7, including rule violations that also use code 10: story media, not mentioned). | false |
 | `ACCOUNT_NOT_ALLOWED` | `account` input is not a configured alias. `details.allowed` lists aliases. | false |
 | `CAPABILITY_UNAVAILABLE` | Feature is `no` for the account's login path, or cached `no` after a probe (1.12). `details = {feature, login}`; `action` names the other login path. | false |
 | `POLICY_DENIED` | `policy.read_only`, or action in `policy.disabled_actions` (1.13.4). `details = {action, reason: "read_only"|"disabled_action"}`. | false |
@@ -156,10 +158,12 @@ Applied to a Meta error body `{"error":{"message","type","code","error_subcode",
 | 1 | code 9 and subcode 2207042 | `PUBLISH_QUOTA_EXHAUSTED` |
 | 2 | code 10 and subcode 2534022 | `MESSAGING_WINDOW_CLOSED` |
 | 3 | code 10 and message contains "enough viewers" (case-insens.) | `UPSTREAM_REJECTED` |
+| 3a | code 10 and message contains "story media" (case-insens.) | `UPSTREAM_REJECTED` |
+| 3b | code 10 and message contains "not mentioned" (case-insens.; e.g. "User is not mentioned in the caption.") | `INVALID_INPUT`, `action`: "Only @mentions written in a caption or comment can be replied to; photo tags cannot. Ask the poster to add @<username> to the caption." |
 | 4 | code 9007 or subcode begins `2207` | `UPSTREAM_REJECTED` |
 | 5 | code 190 and subcode in {463, 467} | `TOKEN_EXPIRED` |
 | 6 | code 190 | `AUTH_FAILED` |
-| 7 | code 10 or 200 <= code <= 299 | `MISSING_PERMISSION` |
+| 7 | any other code 10, or 200 <= code <= 299 | `MISSING_PERMISSION` |
 | 8 | code in {4, 17, 32, 613, 80002} | `RATE_LIMITED` |
 | 9 | code in {1, 2} | `UPSTREAM_TRANSIENT` |
 | 10 | code 803, 110, 24; or code 100 and subcode 33; or HTTP 404 | `NOT_FOUND` |
@@ -327,7 +331,7 @@ Result: `{ accounts: [ { alias, login: "instagram"|"facebook", ig_user_id, page_
 
 #### instagram_get_profile (A)
 Request: `GET /{IG}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url` plus `,account_type` on the instagram path only.
-Result: `{ id, username, name, biography, website, followers_count, follows_count, media_count, profile_picture_url, account_type }` (`account_type` is `null` on the facebook path). Errors: auth/mapping per 1.7.
+Result: `{ id, username, name, biography, website, followers_count, follows_count, media_count, profile_picture_url, account_type }` (`account_type` is `null` on the facebook path), plus `warnings: string[]`. On the facebook path `warnings` always holds `ACCOUNT_TYPE_UNAVAILABLE: account_type is not provided by the Graph API on the facebook login path`; on the instagram path it is `[]`. Errors: auth/mapping per 1.7. (Amended 2026-11-01: `warnings` added; the IG User node on graph.facebook.com exposes no account-type field.)
 
 #### instagram_get_rate_limits (A)
 Request: `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Meta shape: `{"data":[{"quota_usage":N,"config":{"quota_total":50,"quota_duration":86400}}]}` (first element used).
@@ -370,6 +374,7 @@ Result: list of media objects with exactly the `MEDIA_LIST_FIELDS` keys (missing
 Input: `media_id` (required).
 Request: `GET /{media_id}?fields=id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,thumbnail_url,media_url,is_comment_enabled,is_shared_to_feed,shortcode,alt_text,username,children{id,media_type,media_url,thumbnail_url}`.
 Result: `MEDIA_LIST_FIELDS` keys plus `is_shared_to_feed, shortcode, alt_text, username` and `children: [ {id, media_type, media_url, thumbnail_url} ]` (`[]` when none). Errors: `NOT_FOUND` for unknown id.
+Stories (amended 2026-11-01): the live test showed Meta rejects comment fields on STORY media with code 10 "(#10) Comments cannot be made on story media." (mapped `UPSTREAM_REJECTED`, row 3a). When that exact error occurs the server retries the same GET once without the top-level fields `comments_count`, `is_comment_enabled` and `comments`; the result then has those keys as `null` (all other keys as normal). Any other error is returned unchanged. The same single retry applies to `instagram_download_media` (sidecar `comments_count: null`), `instagram_preflight_delete_media` (`comments_count: null`) and `instagram_preflight_set_comments_enabled` (`current_comment_enabled: null`).
 
 #### instagram_list_stories (A)
 Input: `limit`, `cursor`. Request: `GET /{IG}/stories?fields=id,caption,media_type,media_product_type,permalink,timestamp,media_url,thumbnail_url&limit=<limit>[&after=...]`. Result: list of objects with those keys.
@@ -529,7 +534,7 @@ Result `{ mode, items: [object...], next_cursor }`. Lookup modes return exactly 
 #### instagram_preflight_reply_mention (A)
 Action `reply_mention`. Input: `media_id` (required), `comment_id` (optional; present = reply to a comment mention), `message` (1..2200).
 Preflight request: with `comment_id`: `GET /{IG}?fields=mentioned_comment.comment_id(<comment_id>){id,text,timestamp}`; without: `GET /{IG}?fields=mentioned_media.media_id(<media_id>){id,caption,username,permalink}`; the expected sub-object missing -> `NOT_FOUND`. `preview = { media_id, comment_id: string|null, message, target: object }`.
-Approve: the same GET again (stale; missing -> `STALE_PREVIEW`), then `POST /{IG}/mentions` body `media_id`, `message`, and `comment_id` when given. Result `{ id }`.
+Meta rejects a mention whose user was only photo-tagged (not @mentioned in a caption/comment) with code 10 "User is not mentioned in the caption."; this maps to `INVALID_INPUT` (row 3b), at whichever step (preflight GET, approve GET or POST) Meta returns it. Approve: the same GET again (stale; missing -> `STALE_PREVIEW`), then `POST /{IG}/mentions` body `media_id`, `message`, and `comment_id` when given. Result `{ id }`.
 
 ### 2.5 Direct messages (4)
 
@@ -719,6 +724,10 @@ Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/cont
 ### 3.4 `version`
 Prints the package version (e.g. `1.0.0-rc.1`) and a newline to stdout, exit 0. `--version` is an alias.
 
+
+### 3.5 `auth set-token` (amended 2026-11-01)
+Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire).
+
 ---
 
 ## 4. HTTP transport contract (`serve --http`, and `daemon --http`)
@@ -788,7 +797,7 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U14 | `views` breakdown names (03) | Only `follow_type`, `media_product_type` accepted; `follower_type` is rejected locally. |
 | U15 | Demographic `timeframe` values still valid (03) | Default `this_month`; Meta rejection surfaces `INVALID_INPUT`. |
 | U16 | Container child readiness / image containers need polling (01) | Always poll each container to `FINISHED`. |
-| U17 | `account_type` field on `/{IG}` of the instagram path (03) | Requested only on the instagram path; `null` on facebook. |
+| U17 | `account_type` field on `/{IG}` of the instagram path (03) | Requested only on the instagram path; `null` on facebook (see U30). |
 | U18 | Messaging on the facebook path (02) | Capability `probe`: requests go to `/{page_id}/...` (2.5 path rule); a permission/unsupported failure caches `no`. |
 | U19 | Meta error codes for publish quota (9/2207042) and messaging window (10/2534022) | Mapped by 1.7 rows 1-2; any other code falls to the generic rows. |
 | U20 | Header name `X-Hub-Signature-256` (02) | Required exactly; absence is `401`. |
@@ -799,6 +808,10 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U25 | Comments edge pagination via `after` (02) | Uses `limit` and `after` generically (1.9). |
 | U26 | Reels max duration 15 min vs 20 min (01) | Local check at 15 min; unparsable duration -> warning only. |
 | U27 | Webhook subscribe endpoint path (02) | The server never subscribes; the user configures subscriptions in the app dashboard. |
+| U28 | Hide a comment you own (02, 03: docs said owner comments "always display, even with `hide=true`") | OBSERVED 2026-11-01, facebook path: Meta ALLOWED the media owner to hide their own comment (`POST /{comment_id}` `hide=true` succeeded). No special-casing; the op is attempted like any other and a Meta rejection still marks the item `failed`. |
+| U29 | `GET /{page_id}/conversations?platform=instagram` in Development mode (02) | OBSERVED 2026-11-01, facebook path, Development mode: returned an empty list with no error although a real DM from a non-role Instagram account existed. Sending a private reply (`private_reply` op) to that account worked. Probable causes: a dev-mode restriction to app-role users, or the "Allow access to messages" toggle (phone-app only, absent on some accounts); not confirmed. `list_conversations` returns `items: []`; no error is raised. |
+| U30 | `account_type` on the facebook path (03) | OBSERVED 2026-11-01: not exposed on the IG User node via graph.facebook.com; `account_type` stays `null` and `instagram_get_profile` adds the `ACCOUNT_TYPE_UNAVAILABLE` warning. |
+| U31 | Comment fields on STORY media (02) | OBSERVED 2026-11-01: `GET /{story_id}` with `comments_count`/`is_comment_enabled` fails with code 10 "(#10) Comments cannot be made on story media."; handled by the single story-safe retry (2.2). Code 10 is also used for rule violations (row 3a/3b) so it is no longer always `MISSING_PERMISSION`. |
 
 ---
 

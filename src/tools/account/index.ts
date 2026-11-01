@@ -46,7 +46,7 @@ const PROFILE_FIELDS = 'id,username,name,biography,website,followers_count,follo
 const getProfile = defineTool({
   name: 'instagram_get_profile',
   title: 'Get profile',
-  description: 'Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type (account_type is null on the facebook login path).',
+  description: 'Profile of the connected account: username, name, bio, website, counts, profile picture URL and account type. On the facebook login path account_type is always null and warnings says so (the Graph API does not provide it there).',
   inputSchema: { account: accountParam },
   annotations: READ_ONLY,
   async handler(ctx, input) {
@@ -61,7 +61,8 @@ const getProfile = defineTool({
       followers_count: pick('followers_count'), follows_count: pick('follows_count'), media_count: pick('media_count'),
       profile_picture_url: pick('profile_picture_url'), account_type: account.login === 'instagram' ? pick('account_type') : null
     };
-    return ok(data, `@${String(data.username ?? account.alias)}: ${data.followers_count ?? '?'} followers, ${data.media_count ?? '?'} posts.`);
+    const warnings = account.login === 'instagram' ? [] : ['ACCOUNT_TYPE_UNAVAILABLE: account_type is not provided by the Graph API on the facebook login path'];
+    return ok({ ...data, warnings }, `@${String(data.username ?? account.alias)}: ${data.followers_count ?? '?'} followers, ${data.media_count ?? '?'} posts.`);
   }
 });
 
