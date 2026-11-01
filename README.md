@@ -43,7 +43,10 @@ The official API does not offer these, so this server does not either.
 
 ## Known limitations
 
-- Direct messages in Development mode (facebook login path): listing conversations may return an empty list for senders without an app role, even though a DM exists. Sending private replies works. Probable causes: a dev-mode restriction, or the phone-app-only "Allow access to messages" toggle (absent on some accounts). Observed 2026-11-01; see docs/CONTRACT.md U29.
+- Direct messages in Development mode (facebook login path): `instagram_list_conversations` returns an empty list until the other participant has a role on the app (for example Instagram Tester; see docs/SETUP.md, "Testing DMs in Development mode"). Observed 2026-11-01; see docs/CONTRACT.md U29.
+- Sending DMs is not live-verified. To an Instagram Tester, send failed with Meta `(#10) This message is sent outside of allowed window` (`MESSAGING_WINDOW_CLOSED`) even right after they messaged. Meta says Standard Access apps can only message people with a role on the app; sending to the public needs Advanced Access for `instagram_manage_messages` (App Review, Business Verification). Private replies to comments were verified.
+- Real DM (`messages`) webhooks are unconfirmed. Real comment webhooks work on the facebook path once the app is Live and subscribed to the Page (`webhooks subscribe-page`).
+- The Instagram Login path and its token refresh are not live-verified.
 - `instagram_get_profile` returns `account_type: null` on the facebook login path (the Graph API does not provide it there); a warning says so.
 - Mention replies work only for caption or comment @mentions, not photo tags.
 

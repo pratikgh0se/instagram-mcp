@@ -263,9 +263,23 @@ Instagram Login tokens last 60 days. The daemon (section G) refreshes them daily
 ### Messaging and mentions: what to expect in development mode (confirmed 2026-11-01, Facebook Login)
 
 - Connected tools, **Allow access to messages** is a phone-app-only setting. It was absent on the tester's account and app version.
-- Reading DMs (`instagram_list_conversations`) may return an empty list in development mode for senders who have no role on the app, even when a DM exists. Sending (private replies to a comment) worked.
+- Reading DMs (`instagram_list_conversations`) returns an empty list in development mode until the other participant has a role on the app, even when a DM exists (see "Testing DMs in Development mode" below). Private replies to a comment worked.
 - A DM from someone who does not follow the account lands in **Message requests**, not the main inbox.
 - Replying to mentions (`instagram_preflight_reply_mention`) only works for @mentions written in a caption or comment, not for photo tags. Ask the poster to add `@<username>` to the caption.
+
+### Testing DMs in Development mode
+
+Confirmed 2026-11-01 on the Facebook Login path.
+
+1. In the App dashboard open **App roles**, **Roles**, **Add People**, choose **Instagram Tester** and enter the other person's Instagram username (`<username>`).
+2. They accept the invite in a browser at `https://www.instagram.com/accounts/manage_access/`, **Tester Invites**. The Instagram mobile app does not show it.
+3. After that, `instagram_list_conversations` and `instagram_get_conversation` return their conversation and messages.
+
+Sending is not confirmed. `instagram_preflight_send_message` followed by approve to an Instagram Tester failed with Meta `(#10) This message is sent outside of allowed window` (subcode 2534022, mapped to `MESSAGING_WINDOW_CLOSED`), even one minute after they messaged and with the local window check showing open. Meta documents that apps with Standard Access can only send messages to people who have a role on the app ([send-message](https://developers.facebook.com/docs/messenger-platform/instagram/features/send-message)); the Instagram Tester role probably does not count. Sending DMs to the public needs Advanced Access for `instagram_manage_messages` through App Review (and Business Verification). Private replies to comments are unaffected.
+
+### Going Live
+
+Switch the app to Live (Publish) when you need real webhooks (section H) or want to leave Development mode. In **App settings**, **Basic** set a Privacy Policy URL, a Data deletion instructions URL, an app icon and a category, then publish. Live alone, without App Review, is enough for your own account. Each self-hoster needs their own policy pages; any static host works. Serving other people's accounts still needs App Review and Advanced Access.
 
 ## F. Optional: media host for local files (Cloudflare Tunnel)
 
@@ -323,7 +337,7 @@ Webhooks give the inbox push events. Without them it polls, which is fine for te
 5. In the Meta dashboard: **Instagram**, **API setup with Instagram login** (or Facebook login), section **Configure webhooks** (Meta's UI may label this differently). Enter **Callback URL** `https://hooks.yourdomain.example/webhooks/instagram` and **Verify token**, then **Verify and save**. Meta calls your URL; the daemon must be running.
 6. Subscribe to fields: `comments`, `mentions`, `messages`, `message_reactions`, `messaging_postbacks`. On the Facebook Login path `story_insights` is also available. The server never subscribes by itself; you toggle fields in the dashboard (the contract lists the subscribe endpoint as unverified).
 7. For Instagram Login, also make sure the test account is subscribed to the app's webhooks (a per-account toggle next to the account under the API setup page; Meta's UI may label this differently).
-8. Facebook Login path only: subscribe the app to the linked Page, otherwise real events may never arrive (dashboard Test events still do). Run `node dist/cli.js webhooks subscribe-page --account <alias>` (default field `feed`; change with `--fields`, undo with `--unsubscribe`), then `node dist/cli.js webhooks page-subscription --account <alias>` and confirm `"subscribed": true`. `doctor` also reports this as `page_subscription` when webhooks are enabled. The Page token needs `pages_manage_metadata`. Subscribing `messages` needs the `pages_messaging` permission and is not required for Instagram webhooks.
+8. Facebook Login path only: subscribe the app to the linked Page, otherwise real events may never arrive (dashboard Test events still do). Run `node dist/cli.js webhooks subscribe-page --account <alias>` (default field `feed`; change with `--fields`, undo with `--unsubscribe`), then `node dist/cli.js webhooks page-subscription --account <alias>` and confirm `"subscribed": true`. `doctor` also reports this as `page_subscription` when webhooks are enabled. The Page token needs `pages_manage_metadata`. Subscribing `messages` needs the `pages_messaging` permission and is not required for Instagram webhooks. On the Facebook Login path real webhooks need the app to be Live (see "Going Live" in section E) and this subscription; after both, a real comment webhook arrived within 2 s (confirmed 2026-11-01). Real `messages` webhooks are not confirmed yet.
 
 Limits: Meta may deliver webhook events for accounts you do not own only after Advanced Access. For your own test account in development mode, delivery is not confirmed from the docs; the live test records what happens. If no events arrive, the inbox still works by polling.
 

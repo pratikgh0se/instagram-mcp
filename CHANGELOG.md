@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CLI: `app set --app-id <id>` and `accounts add --app-id <id>` write `app.app_id`.
 - `INSTAGRAM_MCP_HTTP_HOST` environment override for the HTTP bind host (`allow_remote` rules still apply).
 
+### Documentation
+- SETUP: "Testing DMs in Development mode" (Instagram Tester role) and "Going Live"; webhook step notes Live plus Page subscription. README known limitations: DM sending not live-verified, real DM webhooks unconfirmed, Instagram Login path and token refresh not live-verified.
+
 ### Changed
 - Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.
 - Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
