@@ -14,6 +14,8 @@ Amendment 2026-11-01 (Page subscription, found in live E2E): new CLI commands `w
 
 Amendment 2026-11-01 (webhook event time, found in live E2E): `entry[i].time` in milliseconds (DM `messaging` entries) is no longer read as seconds (5, U34).
 
+Amendment 2026-11-01 (capability cache, found in blind live failure-path run): Meta 100/subcode 33 on an object lookup no longer records a cached `no` (it was turning a mistyped conversation id into a permanent `CAPABILITY_UNAVAILABLE` for all DM tools); cached `no` entries are cleared by `auth set-token` and the new `capabilities reset` (3.7) and reported as a `doctor` warning (3.3); 1.5 names URL-rule and cursor violations as validation failures with `details.issues`.
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -124,7 +126,7 @@ Success: `isError` absent/false; `structuredContent` = the documented result obj
 
 Error: `isError: true`; `structuredContent = { "error": { "code": <ErrorCode>, "message": <string>, "action"?: <string>, "retryable": <boolean>, "details"?: <object> } }`; `content` = one text item `"<CODE>: <message>"` (single line).
 
-All input validation failures, including schema violations (missing required field, wrong type, unknown property, out-of-range), are returned as the error envelope with code `INVALID_INPUT` and `details.issues = [{path: string, message: string}]`. They MUST NOT surface as JSON-RPC protocol errors. Unknown input properties are rejected (strict objects).
+All input validation failures, including schema violations (missing required field, wrong type, unknown property, out-of-range), media URL rule violations and invalid `cursor` values, are returned as the error envelope with code `INVALID_INPUT` and `details.issues = [{path: string, message: string}]`. They MUST NOT surface as JSON-RPC protocol errors. Unknown input properties are rejected (strict objects).
 
 Field naming: contract-defined fields are snake_case. Fields passed through from Meta keep Meta's names and values. Meta fields that were requested but absent from the Meta response are `null` in results (arrays that were requested and absent: `[]` where stated). Locally generated timestamps are `Date.toISOString()` UTC (`2026-10-29T12:00:00.000Z`). Meta-provided timestamps are passed through unmodified. Input timestamps accept ISO 8601 with `Z` or numeric offset, or a date-only `YYYY-MM-DD` (= 00:00:00Z); anything else is `INVALID_INPUT`. When converted to Meta's `since`/`until` they become integer Unix seconds.
 
@@ -227,7 +229,7 @@ Remote URL rules (publish media/cover, DM media): must be `https://`; no credent
 | `messaging` | yes | probe | DM tools, `private_reply` op, messaging profile (facebook path: Messenger Platform endpoints on the Page, see 2.5) |
 | `collab_invites` | probe | yes | collab invite tools |
 
-`no` -> `CAPABILITY_UNAVAILABLE` before any Graph request (at preflight for preflight tools). `probe` -> attempt; if the Graph call fails with a mapped `MISSING_PERMISSION`, or Meta code 3, or Meta code 100 whose message matches `/unsupported|not supported|does not support/i`, then record `no` for (account, feature) in SQLite (`capability_cache`) and return `CAPABILITY_UNAVAILABLE` (from a preflight, or as the failed approve error). A cached `no` makes later calls return `CAPABILITY_UNAVAILABLE` with zero Graph requests, including across process restarts with the same `INSTAGRAM_MCP_HOME`. A successful probe is not cached.
+`no` -> `CAPABILITY_UNAVAILABLE` before any Graph request (at preflight for preflight tools). `probe` -> attempt; if the Graph call fails with a mapped `MISSING_PERMISSION`, or Meta code 3, or Meta code 100 whose message matches `/unsupported|not supported|does not support/i`, then record `no` for (account, feature) in SQLite (`capability_cache`) and return `CAPABILITY_UNAVAILABLE` (from a preflight, or as the failed approve error). A cached `no` makes later calls return `CAPABILITY_UNAVAILABLE` with zero Graph requests, including across process restarts with the same `INSTAGRAM_MCP_HOME`. A successful probe is not cached. Meta code 100 with subcode 33 (object does not exist) is never a probe failure, whatever its message: it maps to `NOT_FOUND` (1.7) and records nothing. Only a failure of the feature's own request records `no`; a request about a specific object (a conversation, a message, a comment) that fails with `NOT_FOUND` never does. A cached `no` is removed for an account when `auth set-token` stores a token for that account (3.5) and by `capabilities reset` (3.7).
 
 ### 1.13 Preflight / approve protocol
 
@@ -744,7 +746,7 @@ Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail
 | `secrets_backend` | backend usable | | unusable |
 | `tokens` | every account has a token | | any account missing a token |
 | `token_validity` | `/me` request (1.4) 2xx per account | | any `/me` error (mapped code in message) |
-| `capabilities` | always `pass` (lists the static matrix, no probes) | | |
+| `capabilities` | no cached `no` entries (lists the static matrix, no probes) | at least one cached `no` in `capability_cache` (message names account and feature; action: `instagram-mcp capabilities reset --account <alias>`) | |
 | `quota` | `content_publishing_limit` 2xx | request failed | |
 | `media_host` | `public_base_url` set | unset | |
 | `daemon` | lease held by a live daemon | no daemon | |
@@ -767,6 +769,10 @@ Both take `--account <alias>` (default: `default_account`) and work only for fac
 `webhooks page-subscription`: `GET /{page_id}/subscribed_apps` with the account token. stdout: one JSON document `{alias, page_id, app_id, subscribed, subscribed_fields}` where `app_id` is the configured app id (or `null` when none is configured), `subscribed` is true iff an entry's `id` equals `app_id` (with `app_id` null: true iff any entry exists), and `subscribed_fields` is that entry's `subscribed_fields` (else `[]`). Exit 0.
 
 `webhooks subscribe-page`: optional `--fields <comma list>` (each item `^[a-z_]{1,64}$`, 1 to 20 items; default `feed`), optional `--unsubscribe`. Subscribe: `POST /{page_id}/subscribed_apps` with body `subscribed_fields=<list>`; unsubscribe: `DELETE /{page_id}/subscribed_apps`. Then the same GET as `page-subscription`. stdout: the `page-subscription` JSON plus `"action":"subscribed"|"unsubscribed"`. Exit 0. Meta errors are mapped (1.7), printed as above, exit 1 (no GET after a failed write).
+
+### 3.7 `capabilities reset` (added 2026-11-01)
+
+Options: `--account <alias>` (default: `default_account`), `--feature <name>` (one feature id from the 1.12 matrix; default: all). Deletes the matching rows of `capability_cache` for that account; no Graph request. stdout: one JSON document `{alias, cleared: string[]}` (`cleared` = features whose cached row was removed, matrix order; `[]` when none). Exit 0. Unknown alias or a `--feature` not in the matrix: `INVALID_INPUT`, one stderr line in the CLI's usual error form, nothing on stdout, exit 1.
 
 ---
 
