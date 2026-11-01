@@ -20,6 +20,8 @@ Amendment 2026-11-01 (delete verification, found in blind live run): `instagram_
 
 Amendment 2026-11-01 (live recovery run): 1.13.9 states the scheduler between-passes exception and takes `creation_id` from the scheduled job when present; `instagram_get_operation` `finished_at` is `null` while `pending`/`running` (2.1).
 
+Amendment 2026-11-01 (Unified login, found in live E2E): Meta no longer offers "API setup with Instagram login" (the dashboard Instagram-login token) to apps; new apps get "API setup with Unified login", which issues a non-expiring system-user access token used on graph.facebook.com without a Page. New login value `unified` (1.16), per-account app secrets (1.16.6), capability column (1.12), DM path rule (2.5), CLI changes (3.2, 3.3, 3.5, 3.6, 3.8). The `instagram` and `facebook` paths are unchanged.
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -46,11 +48,12 @@ Exit codes for `serve` and `daemon` startup: 0 normal shutdown (SIGTERM/SIGINT),
 | `INSTAGRAM_MCP_HOME` | State dir (default `~/.instagram-mcp`). Created 0700 if missing. Holds `state.sqlite`, `staging/`, default `config.json`. |
 | `INSTAGRAM_MCP_CONFIG` | Absolute path of config file (default `$INSTAGRAM_MCP_HOME/config.json`). |
 | `INSTAGRAM_MCP_TOKEN_<ALIAS>` | Account access token (env secrets backend). `<ALIAS>` = alias uppercased with every `-` and `.` replaced by `_`. Alias grammar: `^[a-z0-9][a-z0-9_-]{0,31}$`. |
-| `INSTAGRAM_MCP_APP_SECRET` | App secret. Enables `appsecret_proof` (facebook path) and webhook signature verification. |
+| `INSTAGRAM_MCP_APP_SECRET` | App secret. Enables `appsecret_proof` (facebook and unified paths) and webhook signature verification. |
+| `INSTAGRAM_MCP_APP_SECRET_<ALIAS>` | Per-account app secret override (env backend; `<ALIAS>` transformed as for tokens). See 1.16.6. |
 | `INSTAGRAM_MCP_HTTP_TOKEN` | Bearer token required by HTTP transport. |
 | `INSTAGRAM_MCP_WEBHOOK_VERIFY_TOKEN` | Webhook verify token (decision D4: the spec lists the stored kind but no env name). |
 | `INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM` | Replaces scheme+host(+port) of the instagram-path Graph base (section 1.4). |
-| `INSTAGRAM_MCP_GRAPH_URL_FACEBOOK` | Same for the facebook path. |
+| `INSTAGRAM_MCP_GRAPH_URL_FACEBOOK` | Same for the facebook and unified paths. |
 | `INSTAGRAM_MCP_RUPLOAD_URL` | Replaces `https://rupload.facebook.com`. |
 | `INSTAGRAM_MCP_POLL_INTERVAL_MS` | Container polling interval (integer >= 1, default 2000). |
 | `INSTAGRAM_MCP_HEARTBEAT_MS` | Operation heartbeat interval (integer >= 100, default 20000; 1.13.9). |
@@ -90,7 +93,7 @@ The env secrets backend (`secrets.backend: "env"`) is read-only. With it the ser
 
 New keys (security review 2026-10-29): `local_media_dirs` (string[], default `["<INSTAGRAM_MCP_HOME>/media"]`, `~` expanded; the only directories local publish media/cover files may come from, see 2.3); `policy.verify_remote_media` (boolean, default `false`; when `false` preflights make NO outbound non-Meta request, see 1.11); `policy.confirm_via_elicitation` (boolean, default `true`; see 1.13.3).
 
-Validation (startup, exit 1): `local_media_dirs` is an array of non-empty strings; `policy.verify_remote_media` and `policy.confirm_via_elicitation` are booleans; `graph_api_version` matches `^v[0-9]+\.[0-9]+$`; aliases unique and match the grammar; `login` is `instagram|facebook`; `login:"facebook"` requires non-null `page_id`; `default_account`, when set, names a configured alias; `policy.disabled_actions` members must be action names from 1.13.1; `policy.approval_ttl_seconds` integer 1..86400; `scheduler.container_lead_minutes` integer 0..1380; `scheduler.missed_grace_minutes` integer >= 0; `media_host.public_base_url` is null or an http(s) URL (trailing `/` trimmed); `http.host` loopback unless `http.allow_remote:true`; `token_in_header` boolean (when true, the instagram path sends the token as `Authorization: Bearer` instead of query). A config file that is group- or world-writable (mode `& 0o022`), owned by another uid, or a symlink is refused. Outside `INSTAGRAM_MCP_TEST_MODE=1`, `media_host.public_base_url` must be https, and the `INSTAGRAM_MCP_GRAPH_URL_*` / `INSTAGRAM_MCP_RUPLOAD_URL` overrides must be https (http accepted only in test mode); violations exit 1 at startup (security review 2026-10-29). Zero accounts is legal: the server starts and every account-resolving tool returns `CONFIG_INVALID`.
+Validation (startup, exit 1): `local_media_dirs` is an array of non-empty strings; `policy.verify_remote_media` and `policy.confirm_via_elicitation` are booleans; `graph_api_version` matches `^v[0-9]+\.[0-9]+$`; aliases unique and match the grammar; `login` is `instagram|facebook|unified`; `login:"facebook"` requires non-null `page_id`; `login:"unified"` requires `page_id` null or absent; `default_account`, when set, names a configured alias; `policy.disabled_actions` members must be action names from 1.13.1; `policy.approval_ttl_seconds` integer 1..86400; `scheduler.container_lead_minutes` integer 0..1380; `scheduler.missed_grace_minutes` integer >= 0; `media_host.public_base_url` is null or an http(s) URL (trailing `/` trimmed); `http.host` loopback unless `http.allow_remote:true`; `token_in_header` boolean (when true, the instagram path sends the token as `Authorization: Bearer` instead of query). A config file that is group- or world-writable (mode `& 0o022`), owned by another uid, or a symlink is refused. Outside `INSTAGRAM_MCP_TEST_MODE=1`, `media_host.public_base_url` must be https, and the `INSTAGRAM_MCP_GRAPH_URL_*` / `INSTAGRAM_MCP_RUPLOAD_URL` overrides must be https (http accepted only in test mode); violations exit 1 at startup (security review 2026-10-29). Zero accounts is legal: the server starts and every account-resolving tool returns `CONFIG_INVALID`.
 
 ### 1.4 Graph URL construction and token placement
 
@@ -100,6 +103,7 @@ Base URL per account:
 |---|---|---|
 | `instagram` | `https://graph.instagram.com` | `INSTAGRAM_MCP_GRAPH_URL_INSTAGRAM` |
 | `facebook` | `https://graph.facebook.com` | `INSTAGRAM_MCP_GRAPH_URL_FACEBOOK` |
+| `unified` | `https://graph.facebook.com` | `INSTAGRAM_MCP_GRAPH_URL_FACEBOOK` |
 
 **Override rule (decision D1):** the override REPLACES scheme+host+port only. The version segment is always appended. With override `http://127.0.0.1:9999` and `graph_api_version` `v26.0`, a call to path `/17841400000000001/media` goes to `http://127.0.0.1:9999/v26.0/17841400000000001/media`. Same for rupload: `{INSTAGRAM_MCP_RUPLOAD_URL or https://rupload.facebook.com}/ig-api-upload/{ver}/{container_id}`. A trailing `/` on the override is tolerated and ignored.
 
@@ -115,10 +119,11 @@ Credential placement as observed by the fake server:
 | login | Token | appsecret_proof |
 |---|---|---|
 | `instagram` | query `access_token=<token>` (header `Authorization: Bearer <token>` instead if `token_in_header:true`) | never sent |
-| `facebook` | header `Authorization: Bearer <token>`; no `access_token` query param | query `appsecret_proof=<lowercase hex HMAC-SHA256(key=app secret, msg=token)>` on EVERY request iff `INSTAGRAM_MCP_APP_SECRET` is set; omitted otherwise |
-| rupload (facebook) | header `Authorization: OAuth <token>` | not sent |
+| `facebook` | header `Authorization: Bearer <token>`; no `access_token` query param | query `appsecret_proof=<lowercase hex HMAC-SHA256(key=effective app secret, msg=token)>` on EVERY request iff an effective app secret exists for the account (1.16.6: the per-account override, else `INSTAGRAM_MCP_APP_SECRET`); omitted otherwise |
+| `unified` | header `Authorization: Bearer <token>`; no `access_token` query param | query `appsecret_proof=<lowercase hex HMAC-SHA256(key=effective app secret, msg=token)>` on EVERY request iff an effective app secret exists for the account (1.16.6); omitted otherwise |
+| rupload (facebook, unified) | header `Authorization: OAuth <token>` | not sent |
 
-The `/me` check used by `doctor` and `auth status --check`: instagram path `GET /me?fields=user_id,username`; facebook path `GET /{ig_user_id}?fields=id,username`.
+The `/me` check used by `doctor` and `auth status --check`: instagram path `GET /me?fields=user_id,username`; facebook and unified paths `GET /{ig_user_id}?fields=id,username` (unified: `ig_user_id` resolved per 1.16.3 first).
 
 Request timeouts: 30 s Graph, 120 s rupload. A timeout counts as a network error.
 
@@ -219,21 +224,64 @@ Remote URL rules (publish media/cover, DM media): must be `https://`; no credent
 
 ### 1.12 Capability matrix
 
-`feature -> {instagram, facebook}`, values `yes | no | probe`:
+`feature -> {instagram, facebook, unified}`, values `yes | no | probe`:
 
-| Feature | instagram | facebook | Used by |
-|---|---|---|---|
-| `publish_url_media` | yes | yes | all publishing |
-| `publish_local_video_resumable` | no | yes | local video file publish (instagram path falls back to media host) |
-| `delete_media` | probe | yes | `instagram_preflight_delete_media` |
-| `business_discovery` | no | yes | `instagram_lookup_account`, `instagram_compare_accounts` (others' side) |
-| `hashtag_search` | no | yes | `instagram_search_hashtag`, `instagram_get_hashtag_media` |
-| `branded_content` | probe | yes | publish with `is_paid_partnership` / `branded_content_sponsor_ids` |
-| `story_insights_webhook` | no | yes | informational |
-| `messaging` | yes | probe | DM tools, `private_reply` op, messaging profile (facebook path: Messenger Platform endpoints on the Page, see 2.5) |
-| `collab_invites` | probe | yes | collab invite tools |
+| Feature | instagram | facebook | unified | Used by |
+|---|---|---|---|---|
+| `publish_url_media` | yes | yes | yes | all publishing |
+| `publish_local_video_resumable` | no | yes | yes | local video file publish (instagram path falls back to media host) |
+| `delete_media` | probe | yes | yes | `instagram_preflight_delete_media` |
+| `business_discovery` | no | yes | yes | `instagram_lookup_account`, `instagram_compare_accounts` (others' side) |
+| `hashtag_search` | no | yes | probe | `instagram_search_hashtag`, `instagram_get_hashtag_media` |
+| `branded_content` | probe | yes | probe | publish with `is_paid_partnership` / `branded_content_sponsor_ids` |
+| `story_insights_webhook` | no | yes | yes | informational |
+| `messaging` | yes | probe | yes | DM tools, `private_reply` op, messaging profile (facebook path: Messenger Platform endpoints on the Page, see 2.5) |
+| `collab_invites` | probe | yes | probe | collab invite tools |
 
 `no` -> `CAPABILITY_UNAVAILABLE` before any Graph request (at preflight for preflight tools). `probe` -> attempt; if the Graph call fails with a mapped `MISSING_PERMISSION`, or Meta code 3, or Meta code 100 whose message matches `/unsupported|not supported|does not support/i`, then record `no` for (account, feature) in SQLite (`capability_cache`) and return `CAPABILITY_UNAVAILABLE` (from a preflight, or as the failed approve error). A cached `no` makes later calls return `CAPABILITY_UNAVAILABLE` with zero Graph requests, including across process restarts with the same `INSTAGRAM_MCP_HOME`. A successful probe is not cached. Meta code 100 with subcode 33 (object does not exist) is never a probe failure, whatever its message: it maps to `NOT_FOUND` (1.7) and records nothing. Only a failure of the feature's own request records `no`; a request about a specific object (a conversation, a message, a comment) that fails with `NOT_FOUND` never does. A cached `no` is removed for an account when `auth set-token` stores a token for that account (3.5) and by `capabilities reset` (3.7).
+
+### 1.16 Unified login (added 2026-11-01)
+
+`login: "unified"` is Meta's "API setup with Unified login": a Facebook Login for Business configuration that issues a system-user access token (SUAT) bound to a business portfolio. The token is used on graph.facebook.com against the IG User node directly; there is no Facebook Page, no token exchange and no refresh (the dashboard states the token never expires).
+
+#### 1.16.1 Same as the facebook path
+
+Except where 1.16.2 to 1.16.6 say otherwise, a unified account behaves exactly like a facebook-path account: Graph base and version (1.4), credential placement (1.4), request encoding, error mapping (1.7), the IG User field set of `instagram_get_profile` (no `account_type` requested; `account_type: null`; the same `ACCOUNT_TYPE_UNAVAILABLE` warning text with "facebook login path" replaced by "unified login path"), media/account insight metric sets (metrics marked "additionally valid only on login `facebook`" are also valid on `unified`; D16's instagram-only rejections do not apply), resumable local video upload (2.3, rupload with `Authorization: OAuth <token>`), delete, business discovery, and every other tool request written with `{IG}`.
+
+#### 1.16.2 Differences
+
+| Topic | unified |
+|---|---|
+| Page | none; `page_id` is always `null`; no request ever contains a Page id |
+| DM endpoints (2.5) | `/{IG}/conversations`, `/{IG}/messages`, `/{IG}/messenger_profile` (never `/{page_id}/...`) |
+| `private_reply` (2.4) | `POST /{IG}/messages` |
+| Capabilities | the `unified` column of 1.12 |
+| Token exchange / refresh | never; `auth refresh` on a unified account prints the same "not applicable" result as on a facebook account (no request) |
+| `expires_at` | always `null` |
+| `/me` check (doctor, `auth status --check`) | `GET /{IG}?fields=id,username` after resolving `{IG}` (1.16.3) |
+| Page subscription (3.6) | not applicable (`CAPABILITY_UNAVAILABLE`) |
+
+#### 1.16.3 Resolving `ig_user_id`
+
+`{IG}` for a unified account is, in order: the account's configured `ig_user_id`; else the value cached in SQLite by an earlier resolution for that alias; else `GET /me/assigned_instagram_accounts` (Meta shape `{data:[{id}], paging?}`; the first page only): exactly one entry -> that `id` (cached for the alias); zero entries -> `CONFIG_INVALID` with action "No Instagram account is assigned to this token. In the Meta app dashboard add business_management to the Unified login configuration (Facebook Login for Business > Configurations), make sure the Instagram account is an asset of the business portfolio, generate a new token, then run instagram-mcp auth set-token again."; two or more -> `CONFIG_INVALID` with action naming `instagram-mcp accounts add --alias <alias> --login unified --ig-user-id <id>` and listing the ids. A failed request maps per 1.7.
+
+#### 1.16.4 `auth set-token` on a unified account
+
+Reads the token as in 3.5 (hidden prompt or stdin; `--no-exchange` is accepted and has no effect). Requests, in order, all on graph.facebook.com with unified credential placement:
+
+1. `GET /me/assigned_instagram_accounts`. A Meta error maps per 1.7; the token is NOT stored; stderr one line in the CLI's usual error form; exit 1.
+2. Choose `ig_user_id`: the configured `ig_user_id` if set (if the step-1 list is non-empty and does not contain it, `notes` gets a string starting `NOT_ASSIGNED:` naming the id, and the token is still stored); else exactly one listed id; else zero or several ids -> `CONFIG_INVALID` exactly as in 1.16.3, token NOT stored, exit 1. A chosen id that was not configured is written to the account's `ig_user_id` in `config.json` (mode stays 0600).
+3. `GET /{ig_user_id}?fields=username` -> `username`; on failure `username: null`, a note says so, the token is still stored.
+
+The token is stored only after step 2 succeeds. stdout: one JSON document `{alias, login: "unified", expires_at: null, exchanged: false, ig_user_id, username, scopes: null, notes}`; exit 0. Cached `no` capability rows for the account are cleared (1.12). Never prints the token.
+
+#### 1.16.5 Doctor and status
+
+`app_credentials` (3.3) ignores unified accounts (they need no app id; the app secret is optional). `page_subscription` ignores unified accounts. Unified accounts take part in `tokens`, `token_validity`, `quota` and `capabilities` like any account.
+
+#### 1.16.6 Per-account app secret (all logins)
+
+An account may have its own app secret, used when one install serves accounts from different Meta apps. Storage: secret kind `app_secret` under the account alias (keychain / encrypted file), or env `INSTAGRAM_MCP_APP_SECRET_<ALIAS>` with the env backend. The **effective app secret** of an account is its own app secret if present, else the global one (`INSTAGRAM_MCP_APP_SECRET` / `auth set-app-secret` without `--account`), else none. It is used for `appsecret_proof` (facebook and unified paths, 1.4) and for the facebook-path token exchange. `auth set-app-secret --account <alias>` stores the per-account secret (hidden prompt or stdin, unknown alias -> `INVALID_INPUT`, exit 1); without `--account` it stores the global one as before. `auth logout --account <alias>` also removes that account's app secret. The values are registered secrets (1.14): never printed, logged or stored outside the secret store.
 
 ### 1.13 Preflight / approve protocol
 
@@ -364,7 +412,7 @@ Conventions for this section. `{IG}` = the account's `ig_user_id`. "Requests" li
 
 #### instagram_list_accounts
 Purpose: configured accounts and resolved capabilities. No input fields. No Graph requests. Capabilities: none.
-Result: `{ accounts: [ { alias, login: "instagram"|"facebook", ig_user_id, page_id: string|null, default: boolean, token: { present: boolean, source: "env", expires_at: null, scopes: null }, capabilities: { <feature>: "yes"|"no"|"probe" } } ] }`. `capabilities` has the nine feature keys of 1.12; a `probe` feature with a cached `no` shows `"no"`. `default` is true for the account that resolution 1.10 step 3 would choose (when one exists). Errors: none expected (`INTERNAL`). Never contains token values.
+Result: `{ accounts: [ { alias, login: "instagram"|"facebook"|"unified", ig_user_id, page_id: string|null, default: boolean, token: { present: boolean, source: "env", expires_at: null, scopes: null }, capabilities: { <feature>: "yes"|"no"|"probe" } } ] }`. `capabilities` has the nine feature keys of 1.12; a `probe` feature with a cached `no` shows `"no"`. `default` is true for the account that resolution 1.10 step 3 would choose (when one exists). Errors: none expected (`INTERNAL`). Never contains token values.
 
 #### instagram_get_profile (A)
 Request: `GET /{IG}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url` plus `,account_type` on the instagram path only.
@@ -575,9 +623,9 @@ Meta rejects a mention whose user was only photo-tagged (not @mentioned in a cap
 
 ### 2.5 Direct messages (4)
 
-All require capability `messaging` (instagram yes, facebook probe).
+All require capability `messaging` (instagram yes, facebook probe, unified yes).
 
-Path rule: on the facebook login path every DM endpoint written below as `/{IG}/conversations`, `/{IG}/messages` or `/{IG}/messenger_profile` is sent to `/{page_id}/...` instead (Messenger Platform for Instagram, Page token), and `/{page_id}/messenger_profile` requests additionally carry `platform=instagram`. Everything else (fields, params, window rules) is identical. On the instagram path `{IG}` is the account's `ig_user_id`.
+Path rule: on the facebook login path every DM endpoint written below as `/{IG}/conversations`, `/{IG}/messages` or `/{IG}/messenger_profile` is sent to `/{page_id}/...` instead (Messenger Platform for Instagram, Page token), and `/{page_id}/messenger_profile` requests additionally carry `platform=instagram`. Everything else (fields, params, window rules) is identical. On the instagram and unified paths `{IG}` is the account's `ig_user_id` (the unified path never uses a Page: DM requests go to `/{IG}/...`, `messenger_profile` requests carry `platform=instagram` as written below).
 
 #### instagram_list_conversations (A)
 Input: `user_id` (IGSID filter, optional), `limit`, `cursor`.
@@ -739,7 +787,7 @@ Processes due scheduled jobs once at the process clock `T` (honors `INSTAGRAM_MC
 stdout: `{"ok":true,"now":"<ISO>","jobs":[{"job_id":"sched_...","account":"...","status_before":"...","status_after":"...","action":"containers_created"|"published"|"missed"|"failed"|"unknown"|"skipped","operation_id":"op_..."|null,"error":{"code":"...","message":"..."}|null}]}` (`skipped` = nothing due). Only jobs in status `scheduled` or `containers_created` are listed. Exit codes: 0 (even when individual jobs failed/unknown/missed), 1 internal error or unreadable config, 3 another process holds the daemon lease for this `INSTAGRAM_MCP_HOME` (nothing processed). Graph requests per job are exactly those of 2.3 (scheduled publish). A job in status `unknown` is never touched.
 
 ### 3.2 `auth status`
-Env backend, no network by default. stdout: `{"backend":"env","accounts":[{"alias","login","ig_user_id","token":{"present":boolean,"source":"env","env_var":"INSTAGRAM_MCP_TOKEN_<ALIAS>","expires_at":null,"scopes":null},"valid":null}],"app_secret":{"present":boolean},"http_bearer":{"present":boolean},"webhook_verify_token":{"present":boolean}}`. Exit 0 if every account has a token, else 1. With `--check`: additionally performs the `/me` request (1.4) per account (one GET each, in config order) and sets `valid` true (2xx) or false (any error); exit 0 only if all accounts have tokens and are valid.
+Env backend, no network by default. stdout: `{"backend":"env","accounts":[{"alias","login","ig_user_id","token":{"present":boolean,"source":"env","env_var":"INSTAGRAM_MCP_TOKEN_<ALIAS>","expires_at":null,"scopes":null},"app_secret_override":boolean,"valid":null}],"app_secret":{"present":boolean},"http_bearer":{"present":boolean},"webhook_verify_token":{"present":boolean}}`. `app_secret_override` is true iff the account has its own app secret (1.16.6); `login` may be `unified`. Exit 0 if every account has a token, else 1. With `--check`: additionally performs the `/me` request (1.4) per account (one GET each, in config order) and sets `valid` true (2xx) or false (any error); exit 0 only if all accounts have tokens and are valid.
 
 ### 3.3 `doctor`
 Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail","message","action"?}]}`; without it, human text with the same information. Exit codes: 0 no `fail`; 1 at least one `fail`; 2 config unreadable/invalid/unsafe permissions (then only the `config` check is reported).
@@ -755,8 +803,8 @@ Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail
 | `media_host` | `public_base_url` set | unset | |
 | `daemon` | lease held by a live daemon | no daemon | |
 | `webhooks` | enabled and verify token + app secret present | disabled or secret missing | |
-| `page_subscription` | every facebook-path account with a token has the configured app id in `GET /{page_id}/subscribed_apps`; or webhooks disabled / no such account (message says not applicable) | app not subscribed for some account (action: `instagram-mcp webhooks subscribe-page --account <alias>`), or the request failed (mapped code in message) | |
-| `app_credentials` | every facebook-path account has an app id (account or `app.app_id`) and the app secret is present; or no facebook-path account (message says not applicable) | app id or app secret missing (message names what is missing; action: `instagram-mcp app set --app-id <APP_ID>` and/or `instagram-mcp auth set-app-secret`; without both, `auth set-token` cannot exchange the token and it expires in about 1 hour) | |
+| `page_subscription` | (unified accounts are ignored, 1.16.5) every facebook-path account with a token has the configured app id in `GET /{page_id}/subscribed_apps`; or webhooks disabled / no such account (message says not applicable) | app not subscribed for some account (action: `instagram-mcp webhooks subscribe-page --account <alias>`), or the request failed (mapped code in message) | |
+| `app_credentials` | (unified accounts are ignored, 1.16.5) every facebook-path account has an app id (account or `app.app_id`) and the app secret is present; or no facebook-path account (message says not applicable) | app id or app secret missing (message names what is missing; action: `instagram-mcp app set --app-id <APP_ID>` and/or `instagram-mcp auth set-app-secret`; without both, `auth set-token` cannot exchange the token and it expires in about 1 hour) | |
 
 Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Skipped (not run) for accounts without a token. When `webhooks.enabled` is true, each facebook-path account with a token additionally gets `GET /{page_id}/subscribed_apps` (after its quota request).
 
@@ -765,11 +813,11 @@ Prints the package version (e.g. `1.0.0`) and a newline to stdout, exit 0. `--ve
 
 
 ### 3.5 `auth set-token` (amended 2026-11-01)
-Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire). On the facebook path, when the long-lived exchange is not done (app id or app secret missing, or the exchange request fails), `exchanged` is `false` and `notes` contains a string starting `SHORT_LIVED:` that says the stored token expires in about 1 hour and names the missing piece or the mapped error code; the token is still stored, exit 0.
+Unified accounts follow 1.16.4 instead of this paragraph. Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire). On the facebook path, when the long-lived exchange is not done (app id or app secret missing, or the exchange request fails), `exchanged` is `false` and `notes` contains a string starting `SHORT_LIVED:` that says the stored token expires in about 1 hour and names the missing piece or the mapped error code; the token is still stored, exit 0.
 
 ### 3.6 `webhooks page-subscription` and `webhooks subscribe-page` (added 2026-11-01)
 
-Both take `--account <alias>` (default: `default_account`) and work only for facebook-path accounts; an instagram-path account gives `CAPABILITY_UNAVAILABLE` (message: Instagram-login apps receive webhooks without a Page subscription) and exit 1. A missing token gives `AUTH_FAILED`, exit 1. Errors print one stderr line containing `<CODE>: <message>` (the CLI's usual `instagram-mcp: <CODE>: <message> (<action>)` form), nothing on stdout. Neither command ever prints a token.
+Both take `--account <alias>` (default: `default_account`) and work only for facebook-path accounts; an instagram-path account gives `CAPABILITY_UNAVAILABLE` (message: Instagram-login apps receive webhooks without a Page subscription) and exit 1; a unified account gives `CAPABILITY_UNAVAILABLE` (message: Unified-login apps receive webhooks through the app's Instagram webhook subscription in the Meta dashboard, not a Page subscription) and exit 1, with no request. A missing token gives `AUTH_FAILED`, exit 1. Errors print one stderr line containing `<CODE>: <message>` (the CLI's usual `instagram-mcp: <CODE>: <message> (<action>)` form), nothing on stdout. Neither command ever prints a token.
 
 `webhooks page-subscription`: `GET /{page_id}/subscribed_apps` with the account token. stdout: one JSON document `{alias, page_id, app_id, subscribed, subscribed_fields}` where `app_id` is the configured app id (or `null` when none is configured), `subscribed` is true iff an entry's `id` equals `app_id` (with `app_id` null: true iff any entry exists), and `subscribed_fields` is that entry's `subscribed_fields` (else `[]`). Exit 0.
 
@@ -778,6 +826,10 @@ Both take `--account <alias>` (default: `default_account`) and work only for fac
 ### 3.7 `capabilities reset` (added 2026-11-01)
 
 Options: `--account <alias>` (default: `default_account`), `--feature <name>` (one feature id from the 1.12 matrix; default: all). Deletes the matching rows of `capability_cache` for that account; no Graph request. stdout: one JSON document `{alias, cleared: string[]}` (`cleared` = features whose cached row was removed, matrix order; `[]` when none). Exit 0. Unknown alias or a `--feature` not in the matrix: `INVALID_INPUT`, one stderr line in the CLI's usual error form, nothing on stdout, exit 1.
+
+### 3.8 `accounts add` with `--login unified` (added 2026-11-01)
+
+`accounts add --alias <alias> --login unified [--ig-user-id <id>] [--default]` adds `{alias, login:"unified", ig_user_id: <id>|null, page_id: null}`. `--page-id` with `--login unified` is a usage error (exit 1, nothing written). The usage text lists `instagram|facebook|unified`. stdout/stderr wording is free; the config file stays mode 0600.
 
 ---
 
@@ -799,7 +851,7 @@ Enabled when `webhooks.enabled: true`. Served by `node dist/cli.js daemon [--por
 | Request | Behaviour |
 |---|---|
 | `GET <path>?hub.mode=subscribe&hub.verify_token=<T>&hub.challenge=<C>` | `T` equals `INSTAGRAM_MCP_WEBHOOK_VERIFY_TOKEN` (constant-time) -> `200`, `Content-Type: text/plain`, body exactly `<C>`. Wrong token or `hub.mode != subscribe` -> `403`. Missing `hub.challenge` -> `400`. |
-| `POST <path>` with header `X-Hub-Signature-256: sha256=<hex>` | `<hex>` = HMAC-SHA256(key = `INSTAGRAM_MCP_APP_SECRET`, message = raw request body bytes), compared constant-time. The receiver validates cheaply first: a POST without a well-formed `X-Hub-Signature-256` header (`sha256=` plus 64 hex chars) gets `401` even when no app secret is configured. Wrong signature -> `401` (nothing stored). A POST carrying a well-formed signature header when no app secret is configured -> `503` (D38). Body > 1 MB -> `413`. Valid signature but body not JSON -> `400`. Otherwise `200`, `Content-Type: text/plain`, body `EVENT_RECEIVED`, sent before any slow work. |
+| `POST <path>` with header `X-Hub-Signature-256: sha256=<hex>` | `<hex>` = HMAC-SHA256(key = an app secret, message = raw request body bytes), compared constant-time; the signature is valid if it matches under the global app secret or under any account's own app secret (1.16.6). "No app secret is configured" (D38, `503`) means neither a global nor any per-account app secret exists. The receiver validates cheaply first: a POST without a well-formed `X-Hub-Signature-256` header (`sha256=` plus 64 hex chars) gets `401` even when no app secret is configured. Wrong signature -> `401` (nothing stored). A POST carrying a well-formed signature header when no app secret is configured -> `503` (D38). Body > 1 MB -> `413`. Valid signature but body not JSON -> `400`. Otherwise `200`, `Content-Type: text/plain`, body `EVENT_RECEIVED`, sent before any slow work. |
 | other methods/paths | `404` (wrong method on the path: `405`) |
 
 Event storage (valid POST): for each `entry[i].changes[j]` an event with `field = changes[j].field`, payload `changes[j].value`; for each `entry[i].messaging[k]` an event with field `messages` if it has `message`, `message_reactions` if it has `reaction`, `messaging_postbacks` if it has `postback`, `messaging_seen` if it has `read`, else `unknown`. `event_id` = sha256 hex of the canonical JSON of the event item; an identical event received again is deduplicated (stored once). The event's account is the configured account whose `ig_user_id` equals `entry[i].id` (events for unknown ids are stored with no account and never shown). Event time = `entry[i].time` -> ISO, else the clock at receipt. Meta sends `time` in Unix seconds for `changes` entries and in Unix milliseconds for `messaging` entries (U34): a value >= 10^12 is milliseconds, a smaller value is seconds; a value that is not a finite non-negative number, or whose ISO conversion fails, falls back to the clock at receipt. Retention: the daemon deletes stored webhook events whose event time is more than 30 days before the clock, once at startup and then every 24 hours (events far in the past can therefore disappear shortly after they are stored).
@@ -868,6 +920,8 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U34 | DM webhooks and `time` units (facebook path) (02) | CONFIRMED 2026-11-01: with the Page subscribed to `feed` only (no `pages_messaging`), 5 real DMs from an Instagram Tester arrived as `messaging` entries; their `entry.time` and `messaging[k].timestamp` are Unix milliseconds, while `changes` entries carry Unix seconds. |
 | U35 | Delete of a large carousel (facebook path) (02) | CONFIRMED 2026-11-01: `DELETE` of a 20-item carousel answered HTTP 400, Meta code -1, subcode 2207072, message "Fatal", yet the media was deleted (a following GET gave code 100/subcode 33). |
 | U36 | Sending DMs at Standard Access (facebook path) (02) | CONFIRMED 2026-11-01: in Development mode, `send_message` to an Instagram Tester inside the 24-hour window failed with code 10/subcode 2534022 (`MESSAGING_WINDOW_CLOSED`); after the app was published (Live), still at Standard Access, the same send succeeded. Sending to people with no app role is not tested (Meta documents it as needing Advanced Access). |
+| U39 | Unified login reads (02) | OBSERVED 2026-11-01 on a new app (Development mode, Instagram Tester role): the dashboard no longer offers "API setup with Instagram login" (also absent on an app created days earlier); "Generate token" requires a Unified login configuration and yields a SUAT that graph.instagram.com rejects (190 "Cannot parse access token"). With the template permissions only, every `/{IG}` request answered 100/33; after adding `business_management` (plus `instagram_manage_insights`, `instagram_manage_contents`) to the configuration and generating a new token, `/me/assigned_instagram_accounts` listed the IG id and `/{IG}` (profile), `/media`, `/stories`, `/tags`, `/content_publishing_limit`, `/insights`, `/conversations?platform=instagram`, `business_discovery` and `/live_media` all answered 2xx without `appsecret_proof`. `ig_hashtag_search` answered code 10 (Instagram Public Content Access needs App Review), hence `hashtag_search: probe`. |
+| U40 | Unified login writes and webhooks (02) | Unverified: publishing (URL and resumable), delete, comment writes, `POST /{IG}/messages`, `messenger_profile`, collab invites, branded content, and webhook delivery for a unified account. Live E2E must confirm; failures surface through the normal mapping (1.7) and probes (1.12). |
 
 ---
 
@@ -915,3 +969,4 @@ Choices where the spec/research was silent or ambiguous. The orchestrator should
 | D36 | (security review 2026-10-29) Immediate resumable (facebook local video) upload reads a staged copy whose hash matched the approval; staged copies are deleted on any terminal failure (kept only for `unknown`); staging cleanup also runs at the start of each publish approve. |
 | D37 | (security review 2026-10-29) DM preview lists every sent field (text, media, quick replies, reply_to_mid, reaction, tag). Approval params are stored with only exact registered secret values redacted (no generic pattern redaction) and the binding hash is computed over exactly the stored params, so captions such as `Bearer abcdefghij` approve normally. |
 | D38 | (security review 2026-10-29) Webhook POST validation order: well-formed `X-Hub-Signature-256` header first (else `401`, regardless of app-secret configuration), then app-secret presence (`503`), then HMAC check (`401`), body size (`413`), JSON (`400`). Amends D26. |
+| D39 | (2026-11-01) Unified login is a third `login` value rather than a variant of `facebook`, because it has no Page and no exchange; it reuses the facebook-path host, credential placement and metric sets. Per-account app secrets were added so one install can hold accounts from two Meta apps (and so `appsecret_proof` is computed with the right app's secret). |
