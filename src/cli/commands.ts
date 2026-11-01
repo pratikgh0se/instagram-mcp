@@ -15,6 +15,7 @@ import { checkTokenValidity, printDoctor, runDoctorChecks } from './doctor.js';
 import { envTokenName } from '../secrets/index.js';
 import { errorMessage } from '../redact.js';
 import { readSecret } from './secret-input.js';
+import { getPageSubscription, parseFields, requireFacebookPath, requireToken } from './page-subscription.js';
 
 const out = (line: string): void => void process.stdout.write(line + '\n');
 const json = (value: unknown): void => out(JSON.stringify(value));
@@ -292,9 +293,38 @@ export async function scheduler(argv: string[]): Promise<number> {
 }
 
 // ---------- webhooks ----------
+const WEBHOOKS_USAGE = 'Usage: instagram-mcp webhooks set-verify-token | page-subscription [--account <alias>] | subscribe-page [--account <alias>] [--fields <a,b>] [--unsubscribe]';
+
 export async function webhooks(argv: string[]): Promise<number> {
-  const [sub] = argv;
-  if (sub !== 'set-verify-token') throw usage('Usage: instagram-mcp webhooks set-verify-token (token from stdin or hidden prompt)');
+  const [sub, ...rest] = argv;
+  if (sub === 'page-subscription' || sub === 'subscribe-page') {
+    const { values } = parseArgs({
+      args: rest,
+      options: { account: { type: 'string' }, fields: { type: 'string' }, unsubscribe: { type: 'boolean' } },
+      allowPositionals: false
+    });
+    if (sub === 'page-subscription' && (values.fields !== undefined || values.unsubscribe)) throw usage(WEBHOOKS_USAGE);
+    const fields = sub === 'subscribe-page' ? parseFields(values.fields) : '';
+    const ctx = createContext({ mode: 'cli' });
+    try {
+      const account = ctx.account(values.account);
+      const pageId = requireFacebookPath(account);
+      await requireToken(ctx, account);
+      if (sub === 'page-subscription') {
+        json(await getPageSubscription(ctx, account, pageId));
+        return 0;
+      }
+      const graph = ctx.graph(account);
+      if (values.unsubscribe) await graph.delete(`/${pageId}/subscribed_apps`);
+      else await graph.post(`/${pageId}/subscribed_apps`, { subscribed_fields: fields });
+      const state = await getPageSubscription(ctx, account, pageId);
+      json({ ...state, action: values.unsubscribe ? 'unsubscribed' : 'subscribed' });
+      return 0;
+    } finally {
+      ctx.close();
+    }
+  }
+  if (sub !== 'set-verify-token') throw usage(WEBHOOKS_USAGE);
   const ctx = createContext({ mode: 'cli' });
   try {
     const token = await readSecret('Webhook verify token (input hidden): ');

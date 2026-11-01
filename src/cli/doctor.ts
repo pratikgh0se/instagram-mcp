@@ -4,6 +4,7 @@ import { errorMessage } from '../redact.js';
 import { isAppError } from '../errors.js';
 import { resolveMatrix } from '../graph/capabilities.js';
 import { currentLeaseHolder } from '../daemon/lease.js';
+import { getPageSubscription } from './page-subscription.js';
 import { envTokenName, GLOBAL_SCOPE } from '../secrets/index.js';
 
 export interface DoctorCheck {
@@ -56,6 +57,10 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
   // Contract 3.3: per account (config order) `/me` then the quota request, then the next account.
   const bad: string[] = [];
   const quotaFailures: string[] = [];
+  const whEnabled = ctx.config.webhooks.enabled;
+  const unsubscribed: string[] = [];
+  const subFailures: string[] = [];
+  let subChecked = 0;
   for (const a of withToken) {
     const r = await checkTokenValidity(ctx, a);
     if (!r.ok) bad.push(r.message);
@@ -64,6 +69,15 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
       await graph.get(`/${await graph.igUserId()}/content_publishing_limit`, { fields: 'quota_usage,config' });
     } catch (error) {
       quotaFailures.push(`${a.alias}: ${errorMessage(error)}`);
+    }
+    if (whEnabled && a.login === 'facebook' && a.page_id) {
+      subChecked++;
+      try {
+        const sub = await getPageSubscription(ctx, a, a.page_id);
+        if (!sub.subscribed) unsubscribed.push(a.alias);
+      } catch (error) {
+        subFailures.push(`${a.alias}: ${isAppError(error) ? error.code : 'ERROR'}: ${errorMessage(error)}`);
+      }
     }
   }
   if (withToken.length === 0) out.push(check('token_validity', 'warn', 'Skipped: no account has a token.'));
@@ -89,6 +103,19 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
   const verify = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'webhook_verify_token').catch(() => undefined));
   const appSecret = Boolean(await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret').catch(() => undefined));
   out.push(wh && verify && appSecret ? check('webhooks', 'pass', 'Enabled with verify token and app secret.') : check('webhooks', 'warn', wh ? 'Enabled but the verify token or app secret is missing.' : 'Webhooks are disabled.'));
+
+  if (subChecked === 0) {
+    out.push(check('page_subscription', 'pass', 'Not applicable (webhooks disabled or no facebook-path account with a token).'));
+  } else if (subFailures.length || unsubscribed.length) {
+    const msgs = [
+      ...unsubscribed.map((alias) => `${alias}: the app is not subscribed to the linked Page.`),
+      ...subFailures.map((m) => `Could not read the Page subscription for ${m}`)
+    ];
+    const alias = unsubscribed[0] ?? '<alias>';
+    out.push(check('page_subscription', 'warn', msgs.join(' | '), `Run: instagram-mcp webhooks subscribe-page --account ${alias}`));
+  } else {
+    out.push(check('page_subscription', 'pass', `The app is subscribed to the linked Page for ${subChecked} account(s).`));
+  }
   return out;
 }
 

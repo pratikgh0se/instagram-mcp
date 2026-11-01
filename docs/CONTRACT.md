@@ -10,6 +10,8 @@ Amendment 2026-11-01 (second live E2E, facebook path): `conversation_id` inputs 
 
 Amendment 2026-11-01 (orphaned operations, found in live E2E): a `running` operation whose process died is detected and marked `unknown` (1.13.9); `serve` drains in-flight approves before exiting (1.13.10); `instagram_approve` sends MCP progress notifications when the client asks for them (1.13.11); new env variables `INSTAGRAM_MCP_HEARTBEAT_MS`, `INSTAGRAM_MCP_ORPHAN_AFTER_MS`, `INSTAGRAM_MCP_DRAIN_MS` (1.2).
 
+Amendment 2026-11-01 (Page subscription, found in live E2E): new CLI commands `webhooks page-subscription` and `webhooks subscribe-page` (3.6) and a `page_subscription` doctor check (3.3). On the facebook path Meta delivers Instagram webhooks only when the app is subscribed to the linked Page (U33).
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -745,8 +747,9 @@ Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail
 | `media_host` | `public_base_url` set | unset | |
 | `daemon` | lease held by a live daemon | no daemon | |
 | `webhooks` | enabled and verify token + app secret present | disabled or secret missing | |
+| `page_subscription` | every facebook-path account with a token has the configured app id in `GET /{page_id}/subscribed_apps`; or webhooks disabled / no such account (message says not applicable) | app not subscribed for some account (action: `instagram-mcp webhooks subscribe-page --account <alias>`), or the request failed (mapped code in message) | |
 
-Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Skipped (not run) for accounts without a token.
+Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Skipped (not run) for accounts without a token. When `webhooks.enabled` is true, each facebook-path account with a token additionally gets `GET /{page_id}/subscribed_apps` (after its quota request).
 
 ### 3.4 `version`
 Prints the package version (e.g. `1.0.0-rc.1`) and a newline to stdout, exit 0. `--version` is an alias.
@@ -754,6 +757,14 @@ Prints the package version (e.g. `1.0.0-rc.1`) and a newline to stdout, exit 0. 
 
 ### 3.5 `auth set-token` (amended 2026-11-01)
 Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire).
+
+### 3.6 `webhooks page-subscription` and `webhooks subscribe-page` (added 2026-11-01)
+
+Both take `--account <alias>` (default: `default_account`) and work only for facebook-path accounts; an instagram-path account gives `CAPABILITY_UNAVAILABLE` (message: Instagram-login apps receive webhooks without a Page subscription) and exit 1. A missing token gives `AUTH_FAILED`, exit 1. Errors print one line `<CODE>: <message>` on stderr, nothing on stdout. Neither command ever prints a token.
+
+`webhooks page-subscription`: `GET /{page_id}/subscribed_apps` with the account token. stdout: one JSON document `{alias, page_id, app_id, subscribed, subscribed_fields}` where `app_id` is the configured app id (or `null` when none is configured), `subscribed` is true iff an entry's `id` equals `app_id` (with `app_id` null: true iff any entry exists), and `subscribed_fields` is that entry's `subscribed_fields` (else `[]`). Exit 0.
+
+`webhooks subscribe-page`: optional `--fields <comma list>` (each item `^[a-z_]{1,64}$`, 1 to 20 items; default `feed,messages`), optional `--unsubscribe`. Subscribe: `POST /{page_id}/subscribed_apps` with body `subscribed_fields=<list>`; unsubscribe: `DELETE /{page_id}/subscribed_apps`. Then the same GET as `page-subscription`. stdout: the `page-subscription` JSON plus `"action":"subscribed"|"unsubscribed"`. Exit 0. Meta errors are mapped (1.7), printed as above, exit 1 (no GET after a failed write).
 
 ---
 
@@ -840,6 +851,7 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U30 | `account_type` on the facebook path (03) | OBSERVED 2026-11-01: not exposed on the IG User node via graph.facebook.com; `account_type` stays `null` and `instagram_get_profile` adds the `ACCOUNT_TYPE_UNAVAILABLE` warning. |
 | U31 | Comment fields on STORY media (02) | OBSERVED 2026-11-01: `GET /{story_id}` with `comments_count`/`is_comment_enabled` fails with code 10 "(#10) Comments cannot be made on story media."; handled by the single story-safe retry (2.2). Code 10 is also used for rule violations (row 3a/3b) so it is no longer always `MISSING_PERMISSION`. |
 | U32 | Conversation id length (02) | OBSERVED 2026-11-01: `GET /{page_id}/conversations?platform=instagram` returned an id of 132 characters from `[A-Za-z0-9_-]` (base64-style). The original 64-character limit rejected it; the `conversation_id` limit is 256. |
+| U33 | Page subscription for Instagram webhooks (facebook path) (02) | OBSERVED 2026-11-01: with the app published, the Instagram webhook object verified and fields subscribed in the dashboard, real DMs from a tester produced no deliveries while dashboard Test events did; no code path subscribed the app to the Page. Meta docs are inconsistent on whether `POST /{page_id}/subscribed_apps` is needed and which `subscribed_fields` are valid; default `feed,messages` is provisional until confirmed live. |
 
 ---
 

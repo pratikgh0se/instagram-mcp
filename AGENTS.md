@@ -44,7 +44,7 @@ Recommend the user require confirmation on the `instagram_approve` tool only.
 
 ## Running doctor
 
-`node dist/cli.js doctor` (add `--json` for machine output). Exit 0 all good, 1 a check failed, 2 the config could not be loaded. Each non-pass check prints a `fix:` line; apply it or relay it. WARN lines for media host, daemon and webhooks are normal when those optional features are not set up. `auth status --check` gives token presence, expiry and a live `/me` result as JSON.
+`node dist/cli.js doctor` (add `--json` for machine output). Exit 0 all good, 1 a check failed, 2 the config could not be loaded. Each non-pass check prints a `fix:` line; apply it or relay it. WARN lines for media host, daemon and webhooks are normal when those optional features are not set up. On the facebook path with webhooks enabled, a WARN `page_subscription` means the app is not subscribed to the linked Page: run `node dist/cli.js webhooks subscribe-page --account <alias>` (check with `webhooks page-subscription`). `auth status --check` gives token presence, expiry and a live `/me` result as JSON.
 
 ## Operating
 

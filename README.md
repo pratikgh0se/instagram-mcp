@@ -161,7 +161,7 @@ One daemon runs per state directory. Ready-made [launchd](examples/com.instagram
 
 ## Webhooks
 
-The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a public HTTPS URL (a Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. Setup: [docs/SETUP.md](docs/SETUP.md) section H.
+The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a public HTTPS URL (a Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) section H.
 
 ## Security model
 
