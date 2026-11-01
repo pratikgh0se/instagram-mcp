@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Unified login mode (`--login unified`): Meta's "API setup with Unified login", a non-expiring system-user token on graph.facebook.com with no Page. Per-account app secrets (`auth set-app-secret --account`, `INSTAGRAM_MCP_APP_SECRET_<ALIAS>`).
+
+### Changed
+- Setup guide recommends Unified Login for new apps; Meta no longer offers the dashboard Instagram-login token to apps. Instagram Login steps are kept under a legacy heading.
+
 ### Fixed
 - `instagram_get_operation` `finished_at` is `null` while an operation is `pending` or `running` and comes only from the operation when one exists (a running scheduler operation no longer shows the scheduling approval's finish time); an orphaned scheduler publish carries the container id its job recorded in `details.reconcile.creation_id` so it reconciles (contract 1.13.9, 2.1).
 

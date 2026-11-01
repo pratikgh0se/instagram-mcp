@@ -1,6 +1,6 @@
 # Setup guide
 
-This guide takes you from "no Meta developer account" to a working self-hosted instagram-mcp, on either login path. Do the sections in order; sections M to P are optional.
+This guide takes you from "no Meta developer account" to a working self-hosted instagram-mcp, on any of the three login paths. Do the sections in order; sections M to P are optional.
 
 ## Contents
 
@@ -28,9 +28,9 @@ This guide takes you from "no Meta developer account" to a working self-hosted i
 
 ### TL;DR
 
-1. Make a Professional Instagram account (and, on the Facebook path, a Facebook Page linked to it).
-2. Register at developers.facebook.com, create an app, add yourself as a tester, copy a token.
-3. Install the server, run `auth set-app-secret` and `auth set-token`, run `doctor`, connect Claude.
+1. Make a Professional Instagram account (and, on the Facebook path, a Facebook Page linked to it; on the Unified path, a business portfolio).
+2. Register at developers.facebook.com, create an app, add yourself as an Instagram Tester, generate a token.
+3. Install the server, run `accounts add --login unified` and `auth set-token`, run `doctor`, connect Claude.
 
 Everything beyond that (local file upload, scheduling, webhooks) is optional.
 
@@ -56,12 +56,15 @@ Everything beyond that (local file upload, scheduling, webhooks) is optional.
 
 ### Status of each path
 
-| | Facebook Login | Instagram Login |
-|---|---|---|
-| Verified end to end by the maintainer | Yes, live on 2026-11-01 | No (see the note below) |
-| Where steps come from | A live click-through | Meta's published docs, fetched 2026-11-01 |
+| | Unified Login | Facebook Login | Instagram Login |
+|---|---|---|---|
+| Offered to new apps by Meta | Yes (the default) | Yes | No, only apps that already have it |
+| Verified end to end by the maintainer | Reads and the token flow: yes, live on 2026-11-01. Publishing, delete, comment writes, sending DMs, messaging profile and webhooks: not yet | Yes, live on 2026-11-01 | No |
+| Where steps come from | A live click-through | A live click-through | Meta's published docs, fetched 2026-11-01 |
 
-Instagram Login note: the Instagram Login path has not been live-tested by the maintainer. Its steps below follow Meta's current pages ([create an Instagram app](https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md) and [get started](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started), both fetched 2026-11-01; Meta's pages carry no publication date). If a label differs on your screen, follow Meta's page in parallel and tell us.
+Unified Login note: what was confirmed live is the setup, the token, and read calls (profile, media, stories, tags, insights, conversations, business discovery, publishing limit). Publishing, delete, comment writes, sending DMs, the messaging profile and webhooks are untested on this path. They are expected to work like the Facebook path and will be live-tested next. Verified live: (not yet).
+
+Instagram Login note: Meta no longer offers "API setup with Instagram login" to apps (confirmed 2026-11-01: a banner says it is not available for newer apps). The path has not been live-tested by the maintainer. Its steps below follow Meta's older pages ([get started](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started), fetched 2026-11-01). Use it only if your app already shows that entry. If a label differs on your screen, follow Meta's page in parallel and tell us.
 
 Meta renames dashboard items often. Steps are dated "(confirmed 2026-11-01)" where they were walked live; anything undated comes from Meta's docs.
 
@@ -72,8 +75,9 @@ Keep these in a password manager, not in a file in this repo.
 | Item | Where it comes from | Used for |
 |---|---|---|
 | Access token | section H | `auth set-token` |
-| App ID | App settings, Basic | config `app.app_id` (Facebook path exchange) |
-| App secret | App settings, Basic | `auth set-app-secret` (exchange, `appsecret_proof`, webhook signatures) |
+| Business portfolio (Unified path only) | business.facebook.com or the app dashboard | connected to the app in section E |
+| App ID | App settings, Basic | config `app.app_id` (Facebook path exchange only) |
+| App secret (optional on the Unified path) | App settings, Basic | `auth set-app-secret` (Facebook exchange, `appsecret_proof`, webhook signatures) |
 | `ig_user_id` | filled automatically by `auth set-token` | account config |
 | Page ID (Facebook path only) | Graph API Explorer | `accounts add --page-id` |
 
@@ -88,25 +92,27 @@ They are the same program. After `npm link` (section I) you can type `instagram-
 
 ## B. Choose a login path
 
-| | Instagram Login | Facebook Login (for Business) |
-|---|---|---|
-| Needs a Facebook Page | No | Yes, linked to the Instagram account |
-| Token steps | Click "Generate token" in the dashboard (60 days, refreshable) | Graph API Explorer user token; the server exchanges it for a Page token that does not expire |
-| Local image upload | Needs the media host (section M) | Needs the media host (section M) |
-| Local video upload | Needs the media host | Resumable upload, no tunnel |
-| Delete media | Unverified, probed | Yes |
-| Competitor lookup, benchmarks | No | Yes |
-| Hashtag search | No | Yes |
-| Branded content flags | Unverified, probed | Yes |
-| Verified live | No | Yes |
+| | Unified Login (recommended for new apps) | Facebook Login (for Business) | Instagram Login (legacy) |
+|---|---|---|---|
+| Offered to new apps | Yes | Yes | No (Meta removed it) |
+| Needs a Facebook Page | No | Yes, linked to the Instagram account | No |
+| Needs a business portfolio | Yes | No (not in Development mode) | No |
+| Token | System-user token from the dashboard; never expires | Graph API Explorer user token; the server exchanges it for a Page token that does not expire | Dashboard token, 60 days, refreshable |
+| Local image upload | Needs the media host (section M) | Needs the media host (section M) | Needs the media host |
+| Local video upload | Resumable upload, no tunnel | Resumable upload, no tunnel | Needs the media host |
+| Delete media | Expected (unverified) | Yes | Unverified, probed |
+| Competitor lookup, benchmarks | Yes (read confirmed 2026-11-01) | Yes | No |
+| Hashtag search | Probed; needs App Review (Meta code 10) | Yes | No |
+| Branded content flags | Probed | Yes | Unverified, probed |
+| Verified live | Reads and token only | Yes | No |
 
 Recommendation:
 
-- Want every feature (delete, local video upload, competitor lookup, hashtags, branded content): use Facebook Login.
-- Want the shortest path to publishing, comments, DMs and insights, and have no Page: use Instagram Login.
-- This server does not support Unified Login tokens; use the Instagram or Facebook setup. Meta's overview recommends Unified Login for new integrations, but the server's two token types are the Instagram Login token and the Facebook Login user/Page token.
+- New app, no Facebook Page: use Unified Login. It needs a business portfolio. Hashtag search will not work without App Review.
+- Want the path that is verified end to end, and you have or can make a Page: use Facebook Login.
+- Instagram Login only if your app already has "API setup with Instagram login". Meta no longer offers it to apps, and this path is not live-tested.
 
-You can add the other path later as a second account alias for the same Instagram account. Steps that differ are labelled "Instagram Login" or "Facebook Login".
+You can add another path later as a second account alias for the same Instagram account. Steps that differ are labelled "Unified Login", "Facebook Login" or "Instagram Login".
 
 ## C. Prepare the Instagram account
 
@@ -143,6 +149,19 @@ You should see: the App Dashboard, with a **Create App** (or **Create First App*
 
 Direct link: https://developers.facebook.com/apps (**Create App**).
 
+### Unified Login (confirmed 2026-11-01)
+
+1. Click **Create App**. Enter an app name and your contact email. The name must not contain "Instagram", "IG", "Facebook" or "Meta".
+2. Use cases: set the filter to **Content management**, then tick **Manage messaging & content on Instagram**. There is no "Other" option.
+3. Business: **I don't want to connect a business portfolio yet** is allowed here. You connect one in step 6.
+4. Requirements: nothing to fill in. Click **Create app**. Meta asks you to re-enter your Facebook password.
+5. Open **Use cases**, **Customize**. The left menu shows **Permissions and features**, **API setup with Unified login** and **API setup with Facebook login**. A banner says "API setup with Instagram login is not available for newer apps. Your app uses API setup with Unified login instead." (An app created a few days earlier showed the same.)
+6. Unified login requires a business portfolio. In **API setup with Unified login** click **+ Business portfolio**, pick the portfolio, then **Connect**. The Instagram account must be an asset of that portfolio.
+
+You should see: the Unified login API setup page with the portfolio connected.
+
+Next: sections F (tester), G (permissions), H2 (configuration and token).
+
 ### Facebook Login (confirmed 2026-11-01)
 
 1. Click **Create App**. The wizard has five steps: **App details**, **Use cases**, **Business**, **Requirements**, **Overview**.
@@ -154,15 +173,13 @@ Direct link: https://developers.facebook.com/apps (**Create App**).
 
 You should see: the use case page with the left list above.
 
-### Instagram Login (not live-tested; follows Meta's page fetched 2026-11-01)
+### Legacy: apps that still have Instagram login (not live-tested)
 
-Source: https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md
+Meta no longer offers this to apps. Only follow this if your app already has an **API setup with Instagram login** entry (Meta's page, fetched 2026-11-01: https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md).
 
-1. Click **Create App**, name it as above (no "Instagram", "IG", "Facebook" or "Meta").
-2. Meta's page says to choose the use case **Other**, then the app type **Business**. Follow Meta's page here. The live Facebook run showed the Other option labelled "going away soon", so if your wizard no longer offers it, pick **Manage messaging & content on Instagram** and look for an **API setup with Instagram login** entry in the use case's left list (the Facebook run's list showed only the Unified and Facebook entries, so this may differ).
-3. Open the dashboard's **Instagram** product, then **API setup with Instagram login**.
-4. Set up **Instagram business login**: Meta lists three fields there, an OAuth redirect URI, a deauthorize callback URL and a data deletion request URL. The "Generate token" button and this server do not use them, but the dashboard may insist. Use the hosted pages from [section O](#o-optional-go-live-needed-for-real-webhooks) for the data deletion URL, and any HTTPS URL you control for the rest. Meta's rules for HTTPS and localhost here are not documented.
-5. Add your Instagram account in section F, then generate a token in section H2.
+1. Open the dashboard's **Instagram** product, then **API setup with Instagram login**.
+2. Set up **Instagram business login**: Meta lists an OAuth redirect URI, a deauthorize callback URL and a data deletion request URL. The "Generate token" button and this server do not use them, but the dashboard may insist. Use the hosted pages from [section O](#o-optional-go-live-needed-for-real-webhooks) for the data deletion URL, and any HTTPS URL you control for the rest.
+3. Add your Instagram account in section F, then generate a token in section H4.
 
 ## F. Roles and testers
 
@@ -173,18 +190,19 @@ In Development mode only people with a role on the app are visible to it. Roles 
 | Administrator | The Facebook user that owns the app. Can change everything. |
 | Developer | Can change app settings and use the permissions. |
 | Tester | Can use the app while it is in Development mode. |
-| Instagram Tester | An Instagram account (not a Facebook user) that the app may read: your own account on the Instagram Login path, and other people's accounts whose DMs you want to read in Development mode. |
+| Instagram Tester | An Instagram account (not a Facebook user) that the app may read: your own account on the Unified and Instagram Login paths, and other people's accounts whose DMs you want to read in Development mode. |
 
 ### Add an Instagram account as an Instagram Tester (confirmed 2026-11-01)
 
 1. In the App dashboard open **App roles**, **Roles**, **Add People**.
-2. Choose **Instagram Tester** and enter the Instagram username.
-3. Log in as that Instagram account on a desktop browser and open https://www.instagram.com/accounts/manage_access/ , then **Tester Invites**, then **Accept**. The Instagram mobile app does not show the invite.
+2. Choose **Instagram Tester**, type the Instagram username, then **Add**.
+3. Log in as that Instagram account on a desktop browser and open https://www.instagram.com/accounts/manage_access/ , then **Tester invitations**, then **Accept**. The Instagram mobile app does not show the invite.
 
 You should see: the account listed under Roles with a status that is not "pending".
 
 Who needs this:
 
+- Unified Login: your own account (confirmed 2026-11-01). After you accept, the account appears automatically under **2. Generate access tokens** in **API setup with Unified login**.
 - Instagram Login: your own account (Meta's page: App Roles, Roles, or the **Generate access tokens** table under API setup; not live-tested).
 - Facebook Login: your own Page-linked account did not need an invite in the live run, because the Facebook user is the app Administrator. Anyone whose DMs you want to read does.
 
@@ -196,13 +214,17 @@ Leave the app in Development mode for now. Meta says Standard Access (apps servi
 
 ### Add the permissions
 
+Unified Login (confirmed 2026-11-01): in **Permissions and features** click **Add** on `business_management`, `instagram_manage_insights` and `instagram_manage_contents`. Optional: **Instagram Public Content Access**, but hashtag search still needs App Review (Meta code 10). Add these before section H2: the configuration can only offer a permission after it has been added here. The other scopes come from the configuration template in H2.
+
 Facebook Login (confirmed 2026-11-01): under **API setup with Facebook login** click **Add required content permissions** and **Add required messaging permissions**. Then in **Permissions and features** click **Add** on `instagram_manage_comments`, `instagram_manage_contents`, `instagram_manage_insights` and **Instagram Public Content Access**. Do NOT add the `instagram_business_*` permissions; those belong to the Instagram Login path. The status then shows **Ready for testing**. You pick the same scopes again when you generate the token in section H3.
 
-Instagram Login: the dashboard adds the `instagram_business_*` permissions by default when you set up the product. Meta spells some names inconsistently across pages (for example `content_publish` vs `content_publishing`); use the exact string the dashboard shows.
+Instagram Login (legacy): the dashboard adds the `instagram_business_*` permissions by default when you set up the product. Meta spells some names inconsistently across pages (for example `content_publish` vs `content_publishing`); use the exact string the dashboard shows.
 
 ### Which permission for which feature
 
-| Feature | Instagram Login | Facebook Login | Works in Development mode (role users) |
+The Unified Login column uses the same scope names as Facebook Login, plus `business_management`. The configuration template includes most of them (section H2).
+
+| Feature | Instagram Login (legacy) | Facebook Login and Unified Login | Works in Development mode (role users) |
 |---|---|---|---|
 | Profile, media (required) | `instagram_business_basic` | `instagram_basic` | Yes |
 | Publishing | `instagram_business_content_publish` | `instagram_content_publish` | Yes |
@@ -212,12 +234,15 @@ Instagram Login: the dashboard adds the `instagram_business_*` permissions by de
 | Send DMs | same as above | same as above | Role holders: works once the app is Live, fails in Development mode (confirmed 2026-11-01, facebook path). People with no role: needs Advanced Access (Meta docs, untested) |
 | Private reply to a comment | same as above | same as above | Yes (Facebook path confirmed 2026-11-01) |
 | Delete media | `instagram_manage_contents` (unverified on this path) | `instagram_manage_contents` | Yes (Facebook path) |
-| Business discovery (competitors) | Not available | `pages_read_engagement` | Not tested |
+| Business discovery (competitors) | Not available | `pages_read_engagement` (Facebook path); Unified: read confirmed 2026-11-01 | Unified: yes. Facebook: not tested |
 | Hashtag search | Not available | **Instagram Public Content Access** feature | Not confirmed; Meta normally grants it through App Review |
-| Webhooks (Page subscription) | n/a | `pages_manage_metadata` | Needs Live, see section O |
-| Listing the Page | n/a | `pages_show_list` | Yes |
+| Webhooks (Page subscription) | n/a | `pages_manage_metadata` (Facebook path only; not used on Unified) | Needs Live, see section O |
+| Listing the Page | n/a | `pages_show_list` (Facebook path only) | Yes |
+| Finding the Instagram account from the token | n/a | `business_management` (Unified: required; without it every call fails with error 100/33) | Yes |
 
-Also add `business_management` in Graph API Explorer on the Facebook path (it was part of the permission set in the live run).
+Also add `business_management` in Graph API Explorer on the Facebook path (it was part of the permission set in the live run). On the Unified path it is required, see H2.
+
+The Unified rows for publishing, comments and DMs list the configuration template's scopes; whether each action works on that path is unverified except reads (see the status note in section A).
 
 ### OAuth redirect URL
 
@@ -225,25 +250,26 @@ The "Generate token" button and Graph API Explorer do not need a redirect URL. I
 
 ## H. Tokens and ids
 
-Token lifetimes: an Explorer user token lasts about 1 hour; a dashboard "Generate token" token lasts 60 days; a Business Login token lasts 1 hour (Meta's [get started page](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started), fetched 2026-11-01). A Facebook Page token derived from a long-lived user token has `expires_at: null` (confirmed 2026-11-01), so no refresh is needed.
+Token lifetimes: a Unified Login system-user token never expires (the dashboard says so; confirmed 2026-11-01); an Explorer user token lasts about 1 hour; a dashboard "Generate token" token lasts 60 days; a Business Login token lasts 1 hour (Meta's [get started page](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started), fetched 2026-11-01). A Facebook Page token derived from a long-lived user token has `expires_at: null` (confirmed 2026-11-01), so no refresh is needed.
 
-### H1. App ID and app secret (both paths)
+### H1. App ID and app secret (Facebook and Instagram paths; optional on Unified)
 
 1. In the app dashboard open **App settings**, **Basic** (https://developers.facebook.com/apps, pick your app).
 2. Copy the **App ID**. Click **Show** next to **App secret**, enter your password, and copy it.
 
-Do not paste either into a chat, a commit or a screenshot. You will put the app secret into the server's secret store in section J.
+Do not paste either into a chat, a commit or a screenshot. You will put the app secret into the server's secret store in section J. On the Unified path the app secret is optional (it enables `appsecret_proof` and webhook signature checks).
 
-### H2. Instagram Login: generate the token
+### H2. Unified Login: configuration and token (confirmed 2026-11-01)
 
-Not live-tested; follows Meta's page fetched 2026-11-01.
+Do sections E, F and G first (portfolio connected, tester accepted, permissions added). Then in **API setup with Unified login**:
 
-1. Do sections I and J steps 1 to 4 first, so the token is not wasted waiting.
-2. In the dashboard open **Instagram**, **API setup with Instagram login**.
-3. Under **Generate access tokens**, find your account (it must have accepted the Instagram Tester invite, section F) and click **Generate token**.
-4. Log in to Instagram if asked, approve, and copy the token.
+1. Under **1. Configure your app** click **Create new configuration**, then **Create from template**. This creates "Instagram API (unified login)": System-user access token, never expires. Its template permissions are `ads_management`, `ads_read`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments` and `instagram_content_publish`.
+2. IMPORTANT: the template lacks `business_management`. Without it every Instagram call fails with error 100/33 ("does not exist ... missing permissions"). Fix: open **Facebook Login for Business**, **Configurations**, edit the configuration, go to the **Permissions** step, tick `business_management`, `instagram_manage_contents` and `instagram_manage_insights`, then **Save**. (These only appear in the list after you added them in section G.)
+3. Under **2. Generate access tokens** click **Generate token** next to your account. If you have no configuration yet it fails with "Select a configuration in Step 1 before generating an access token". Copy the token.
 
-You should see: a long token string; Meta states dashboard tokens are valid for 60 days. Store it right away with `auth set-token --no-exchange` (section J).
+If you change the configuration later, generate a new token and run `auth set-token` again.
+
+You should see: a long token string. Store it right away with `auth set-token` (section J). The server finds `ig_user_id` itself.
 
 ### H3. Facebook Login: user token in Graph API Explorer (confirmed 2026-11-01)
 
@@ -262,11 +288,22 @@ You do not do the long-lived and Page token steps by hand: `auth set-token` exch
 
 If you add `pages_manage_metadata` later, regenerate the token here, run `auth set-token` again, and restart the daemon if one is running.
 
+### H4. Legacy Instagram Login: generate the token
+
+Only for apps that still have the entry. Not live-tested; follows Meta's older page.
+
+1. Do sections I and J steps 1 to 4 first, so the token is not wasted waiting.
+2. In the dashboard open **Instagram**, **API setup with Instagram login**.
+3. Under **Generate access tokens**, find your account (it must have accepted the Instagram Tester invite, section F) and click **Generate token**.
+4. Log in to Instagram if asked, approve, and copy the token.
+
+You should see: a long token string; Meta states dashboard tokens are valid for 60 days. Store it right away with `auth set-token --no-exchange` (section J).
+
 ### Ids
 
 | Id | How to get it |
 |---|---|
-| `ig_user_id` | Filled in for you; `auth set-token` reads it from Meta and saves it to the config. |
+| `ig_user_id` | Filled in for you; `auth set-token` reads it from Meta and saves it to the config. On the Unified path it is discovered from the token's assigned Instagram accounts. |
 | `page_id` | Facebook Login only: step 8 above. |
 
 ## I. Install
@@ -298,7 +335,13 @@ Pick the alias `main` (any name works; use the same one everywhere).
 
 1. Add the account.
 
-   Instagram Login:
+   Unified Login:
+
+   ```sh
+   instagram-mcp accounts add --alias main --login unified
+   ```
+
+   Instagram Login (legacy):
 
    ```sh
    instagram-mcp accounts add --alias main --login instagram
@@ -310,21 +353,29 @@ Pick the alias `main` (any name works; use the same one everywhere).
    instagram-mcp accounts add --alias main --login facebook --page-id <PAGE_ID> --app-id <APP_ID>
    ```
 
-   You should see: `Added account "main". Next: instagram-mcp auth set-token --account main`. The config is `~/.instagram-mcp/config.json` (mode 0600). On the Facebook path you can also set the app id separately with `instagram-mcp app set --app-id <APP_ID>`; it writes `app.app_id`. Instagram Login does not need it.
+   You should see: `Added account "main". Next: instagram-mcp auth set-token --account main`. The config is `~/.instagram-mcp/config.json` (mode 0600). On the Facebook path you can also set the app id separately with `instagram-mcp app set --app-id <APP_ID>`; it writes `app.app_id`. Unified and Instagram Login do not need it (and `--page-id` is rejected with `--login unified`).
 
-2. Store the app secret (both paths; required for the Facebook exchange, webhooks and `appsecret_proof`).
+2. Store the app secret. Required on the Facebook path (exchange, `appsecret_proof`) and for webhook signatures; optional on the Unified path (skip it unless you use webhooks).
 
    ```sh
    instagram-mcp auth set-app-secret
    ```
 
+   If this install holds accounts from more than one Meta app, store a per-account secret instead: `instagram-mcp auth set-app-secret --account main`. An account's own secret wins over the global one.
+
    Paste the secret at the hidden prompt and press Enter. You should see: `App secret stored.` On macOS the default backend is the keychain (macOS may ask for permission). Elsewhere the default is an encrypted file, which needs `INSTAGRAM_MCP_MASTER_KEY` (`openssl rand -base64 32`, kept somewhere safe) exported in the shell that runs the server.
 
-3. Do section H2 or H3 now to get a token.
+3. Do section H2 (Unified) or H3 (Facebook) now to get a token.
 
 4. Store the access token. It is read from a hidden prompt or stdin, never from a command-line argument.
 
-   Instagram Login (dashboard token, already long-lived):
+   Unified Login (the token never expires; `--no-exchange` is accepted and has no effect):
+
+   ```sh
+   instagram-mcp auth set-token --account main
+   ```
+
+   Instagram Login, legacy (dashboard token, already long-lived):
 
    ```sh
    instagram-mcp auth set-token --account main --no-exchange
@@ -338,7 +389,7 @@ Pick the alias `main` (any name works; use the same one everywhere).
 
    To pipe instead: `pbpaste | instagram-mcp auth set-token --account main`.
 
-   You should see one JSON line with `"alias":"main"`, `"ig_user_id":"..."`, `"username":"..."`, an `expires_at` (Instagram path: about 60 days out; Facebook path: `null`) and a `notes` array. On the Facebook path `"exchanged":true` means the long-lived exchange worked. A note such as "Long-lived user-token exchange failed" means the app id or app secret is missing or wrong; the token was stored as given and will expire in about an hour. Fix and run it again.
+   You should see one JSON line with `"alias":"main"`, `"ig_user_id":"..."`, `"username":"..."`, an `expires_at` (Instagram path: about 60 days out; Facebook and Unified paths: `null`) and a `notes` array. On the Unified path `exchanged` is `false` and `ig_user_id` is filled in for you; a `NOT_ASSIGNED:` note means the configured id is not among the token's accounts. If it fails with `CONFIG_INVALID` ("No Instagram account is assigned to this token"), `business_management` is missing from the configuration (section H2 step 2) or the account is not an asset of the portfolio; fix it, generate a new token and run `auth set-token` again. On the Facebook path `"exchanged":true` means the long-lived exchange worked. A note such as "Long-lived user-token exchange failed" means the app id or app secret is missing or wrong; the token was stored as given and will expire in about an hour. Fix and run it again.
 
 5. Run the health check.
 
@@ -361,9 +412,9 @@ Pick the alias `main` (any name works; use the same one everywhere).
    All checks passed.
    ```
 
-   The three WARN lines are normal until you do sections M, N and P. A FAIL line prints a `fix:` line; see section R. Exit codes: 0 all good, 1 a check failed, 2 config could not be loaded. `instagram-mcp auth status --check` prints JSON with token presence, expiry and a live `/me` result at any time.
+   The three WARN lines are normal until you do sections M, N and P. `app_credentials` and `page_subscription` do not apply to Unified accounts. A FAIL line prints a `fix:` line; see section R. Exit codes: 0 all good, 1 a check failed, 2 config could not be loaded. `instagram-mcp auth status --check` prints JSON with token presence, expiry and a live `/me` result at any time.
 
-Instagram Login tokens last 60 days. The daemon (section N) refreshes them daily when due; without the daemon, the server refreshes lazily when a tool is used. If a token expires, generate a new one and run `auth set-token` again.
+Unified and Facebook tokens do not expire, so there is nothing to refresh. Legacy Instagram Login tokens last 60 days. The daemon (section N) refreshes them daily when due; without the daemon, the server refreshes lazily when a tool is used. If a token expires, generate a new one and run `auth set-token` again.
 
 ## K. Connect Claude Desktop or Claude Code
 
@@ -422,7 +473,7 @@ You should see: a preview with `planned_calls`; with `dry_run` the approve retur
 
 ## M. Optional: media host for local files
 
-Instagram downloads media from a public HTTPS URL. If you give the server a local file path, it stages a copy under an unguessable token and serves it from a small local web server on port 8766. If the daemon (or another instance with the same `INSTAGRAM_MCP_HOME`) already owns that port, the second instance reuses it. You need a public HTTPS hostname that reaches it. This applies to both login paths, and to local images on the Facebook path too (only local video bypasses it there).
+Instagram downloads media from a public HTTPS URL. If you give the server a local file path, it stages a copy under an unguessable token and serves it from a small local web server on port 8766. If the daemon (or another instance with the same `INSTAGRAM_MCP_HOME`) already owns that port, the second instance reuses it. You need a public HTTPS hostname that reaches it. This applies to every login path, and to local images on the Facebook and Unified paths too (only local video bypasses it there).
 
 Options:
 
@@ -490,7 +541,7 @@ Cron alternative without a daemon: run `instagram-mcp scheduler run-once` every 
 
 ## O. Optional: Go Live (needed for real webhooks)
 
-On the Facebook path, real webhooks arrive only once the app is Live (confirmed 2026-11-01). Going Live worked without Business Verification for an app serving only the owner's own account, after adding the four items below. Meta's [create an Instagram app page](https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md) says "Business Verification is required before you can publish"; the live run did not need it. Treat that as observed 2026-11-01 and subject to change.
+On the Facebook path, real webhooks arrive only once the app is Live (confirmed 2026-11-01). The Unified path is expected to need the same; unverified. Going Live worked without Business Verification for an app serving only the owner's own account, after adding the four items below. Meta's [create an Instagram app page](https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md) says "Business Verification is required before you can publish"; the live run did not need it. Treat that as observed 2026-11-01 and subject to change.
 
 ### O1. Host the two pages (free, GitHub Pages)
 
@@ -520,22 +571,22 @@ Any other static host (Cloudflare Pages, Netlify, your own site) works the same 
 
 You should see: the app shown as **Live**.
 
-What changes: your role holders still work, webhooks now deliver, and sending DMs to role holders (for example an Instagram Tester) now works (confirmed 2026-11-01, facebook path). What does not change: you still have Standard Access, so sending DMs to people without a role still needs Advanced Access per Meta (untested, section Q). Serving other people's accounts needs App Review and Advanced Access.
+What changes: your role holders still work, webhooks now deliver, and sending DMs to role holders (for example an Instagram Tester) now works (confirmed 2026-11-01, facebook path; unverified on the Unified path). What does not change: you still have Standard Access, so sending DMs to people without a role still needs Advanced Access per Meta (untested, section Q). Serving other people's accounts needs App Review and Advanced Access.
 
 ## P. Optional: webhooks
 
 Webhooks give the inbox push events. Without them the inbox polls the API, which is fine for testing. Confirmed 2026-11-01 on the Facebook path: once the app is Live and subscribed to the Page, real comment and DM webhooks arrive within seconds, and DMs need no extra permission. In Development mode only role holders' DMs are delivered.
 
-Requirements: the daemon (section N) listening on port 8765, a stable public HTTPS hostname forwarding `/webhooks/instagram` to that port (section M, durable option with the hooks hostname), the app secret stored, and, on the Facebook path, the app Live (section O) and a token with `pages_manage_metadata` (section H3).
+Requirements: the daemon (section N) listening on port 8765, a stable public HTTPS hostname forwarding `/webhooks/instagram` to that port (section M, durable option with the hooks hostname), the app secret stored, the app Live (section O) and, on the Facebook path, a token with `pages_manage_metadata` (section H3).
 
 1. Choose a verify token, any long random string: `openssl rand -base64 24`.
 2. Store it: `instagram-mcp webhooks set-verify-token` (hidden prompt).
 3. In `config.json` set `"webhooks": { "enabled": true, "path": "/webhooks/instagram" }`.
 4. Start the daemon, then run `instagram-mcp doctor`: `[PASS] webhooks`. Check the tunnel: `curl -i "https://hooks.yourdomain.example/webhooks/instagram?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1"` should return `403` (reaching the server proves the route works). Do not put your real verify token in a logged command line.
-5. In the Meta dashboard: **Instagram**, **API setup with Instagram login** (or Facebook login), section **Configure webhooks**. Enter the **Callback URL** `https://hooks.yourdomain.example/webhooks/instagram` and the **Verify token**, then **Verify and save**. The daemon must be running.
+5. In the Meta dashboard: **API setup with Unified login**, section **3. Configure webhooks** (Facebook path: **API setup with Facebook login**; legacy Instagram path: **API setup with Instagram login**). Enter the **Callback URL** `https://hooks.yourdomain.example/webhooks/instagram` and the **Verify token**, then **Verify and save**. The daemon must be running.
 6. Subscribe to fields in that dashboard section: `comments`, `mentions`, `messages`, `message_reactions`, `messaging_postbacks` (and `story_insights` on the Facebook path). This dashboard field subscription is separate from the Page subscription in step 8; the server never toggles dashboard fields for you.
-7. Instagram Login (not live-tested): also make sure your account is subscribed to the app's webhooks (a per-account toggle next to the account on the API setup page).
-8. Facebook path only, required for real events: subscribe the app to the linked Page.
+7. Unified Login (webhooks unverified): turn on the per-account **Webhook Subscription** toggle next to your account in the API setup page. There is no Page subscription on this path, and `webhooks subscribe-page` returns `CAPABILITY_UNAVAILABLE` for a Unified account. The same applies to the legacy Instagram Login path (not live-tested).
+8. Facebook path only (not needed on Unified), required for real events: subscribe the app to the linked Page.
 
    ```sh
    instagram-mcp webhooks subscribe-page --account main
@@ -548,7 +599,7 @@ Meta may deliver webhook events for accounts you do not own only after Advanced 
 
 ## Q. What works in Development mode and at Standard Access
 
-All of the following were observed on the Facebook path on 2026-11-01 unless marked otherwise.
+All of the following were observed on the Facebook path on 2026-11-01 unless marked otherwise. On the Unified path only reads were confirmed (profile, media, stories, tags, insights, conversations, business discovery); the writes, sending DMs and webhooks rows are expected to match but are unverified. Unified Login adds no Page subscription step.
 
 | Capability | Result |
 |---|---|
@@ -560,7 +611,7 @@ All of the following were observed on the Facebook path on 2026-11-01 unless mar
 | Send a DM to an Instagram Tester, Live, Standard Access | Works inside the 24 h window (confirmed 2026-11-01, facebook path: list, read and send all passed) |
 | Send a DM to people with no role on the app | Needs Advanced Access for `instagram_manage_messages` (App Review) per [Meta](https://developers.facebook.com/docs/messenger-platform/instagram/features/send-message). Untested |
 | Real webhooks | Need Live plus Page subscription (sections O and P) |
-| Hashtag search | Not confirmed in Development mode |
+| Hashtag search | Not confirmed in Development mode. On the Unified path it answered Meta code 10 (needs App Review) |
 
 Notes:
 
@@ -579,6 +630,9 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | App name rejected | Name contains "Instagram", "IG", "Facebook" or "Meta" | Rename (observed 2026-11-01) |
 | Explorer: "Invalid OAuth access token - Cannot parse access token" | Host set to `graph.instagram.com` | Set the host to `graph.facebook.com` (section H3) |
 | Explorer dialog does not list your Instagram account | Instagram not linked to the Page, account not Professional or not public | Section C steps 5 to 7 |
+| Every Unified call fails with Meta error 100/33, or `auth set-token` says no Instagram account is assigned | `business_management` missing from the Unified configuration, or the account is not an asset of the portfolio | Section H2 step 2, then a new token and `auth set-token` |
+| "Select a configuration in Step 1 before generating an access token" | No Unified configuration yet | Section H2 step 1 |
+| `graph.instagram.com` rejects a Unified token with code 190 "Cannot parse access token" | Wrong host | Not needed: the server uses graph.facebook.com for Unified accounts |
 | `me/accounts` is empty | Token lacks `pages_show_list`, or your Facebook user lacks full control of the Page | Regenerate the token with the scope; check Page roles |
 | `me/accounts` shows the Page but no `instagram_business_account` | Link not made or points at a different Page | Section C step 6 |
 | Meta code 190 right after generating a token | The Explorer token expired (about 1 hour) before `auth set-token` | Generate a fresh one and run `auth set-token` at once |
@@ -587,6 +641,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | Instagram Tester invite stays "pending" | Not accepted | Accept at https://www.instagram.com/accounts/manage_access/ in a desktop browser (section F) |
 | `webhooks subscribe-page` fails with a permission error | Token has no `pages_manage_metadata` | Section P step 8 |
 | Webhooks never arrive on the Facebook path | App not Live, or Page not subscribed | Sections O and P step 8; `webhooks page-subscription` |
+| Webhooks never arrive on the Unified path (unverified) | App not Live, or the per-account Webhook Subscription toggle is off | Sections O and P step 7 |
 | Claude Desktop: "server disconnected" or `spawn node ENOENT` | Desktop does not read your shell PATH (nvm), or a wrong cli.js path | Use the absolute node path from `command -v node` and an absolute cli.js path (section K) |
 | macOS keychain prompt every run | Keychain item ACL | Choose Always Allow, or use the `encrypted-file` backend |
 | App will not add the account | Account is private or not Professional | Section C |
@@ -605,7 +660,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | Meta code 9 / subcode 2207042 (`PUBLISH_QUOTA_EXHAUSTED`) | Daily publishing limit used | Wait for the window |
 | Meta code 9007 or 2207xxx (`UPSTREAM_REJECTED`) | Media rejected (format, size, aspect, not ready) | Read the Meta message; use JPEG for images, MP4 or MOV for video |
 | `MESSAGING_WINDOW_CLOSED` (code 10 / 2534022) | More than 24 hours since the user's last message, the app is still in Development mode, or (Standard Access) a send to someone outside the app's roles | Do not retry. Ask the person to message again; make sure the app is Live; if it still fails the recipient needs Advanced Access (section Q) |
-| `CAPABILITY_UNAVAILABLE` | Feature not available on this login path | Follow the `action` (it names the other path) |
+| `CAPABILITY_UNAVAILABLE` | Feature not available on this login path (also `webhooks subscribe-page` on a Unified or Instagram account) | Follow the `action` (it names the other path) |
 | `MEDIA_HOST_UNAVAILABLE` | `media_host.public_base_url` unset or port 8766 busy (a second instance with the same state dir, such as the daemon, is fine) | Section M |
 | `OUTCOME_UNKNOWN` | Publish response lost | Do not retry; call `instagram_get_operation` with the approval id |
 | `POLICY_DENIED` | `read_only` or `disabled_actions` | Change `policy` in the config |
@@ -623,6 +678,8 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 - Standard Access: the default. The app can use permissions on accounts that have a role on it (accounts you own or manage). No App Review.
 - Advanced Access: needed to serve people or accounts with no role on your app (for example sending DMs to people with no role). Needs App Review and Business Verification.
 - Development mode vs Live: Development mode shows the app only to role holders. Live is the published state; webhooks need it.
-- Page ID vs Instagram id: the Page ID identifies the Facebook Page (Facebook path, `--page-id`); the Instagram id (`ig_user_id`) identifies the Instagram account and is found for you.
+- Page ID vs Instagram id: the Page ID identifies the Facebook Page (Facebook path only, `--page-id`; the Unified path has no Page); the Instagram id (`ig_user_id`) identifies the Instagram account and is found for you.
+- Unified Login: Meta's "API setup with Unified login". A Facebook Login for Business configuration issues a system-user access token tied to a business portfolio. It never expires and needs no Page.
+- Business portfolio: a Meta Business account that owns assets such as the Instagram account. Unified Login requires one connected to the app.
 - Long-lived token: a token Meta accepts for weeks or months (60 days for Instagram Login). A Page token derived from a long-lived user token has `expires_at: null`.
 - Instagram Tester: an app role for an Instagram account, accepted in a desktop browser at https://www.instagram.com/accounts/manage_access/.

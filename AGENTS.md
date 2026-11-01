@@ -8,7 +8,7 @@ Playbook for an AI agent that installs or operates instagram-mcp for a user. Hum
 2. Never skip the preview. Every write is `instagram_preflight_<action>` first. Show the user the `preview`, `warnings` and `planned_calls`, and only then call `instagram_approve` with `{approval_id, confirm: true}` after the user agrees. Do not approve on the user's behalf unless they have explicitly delegated it for this task.
 3. Never retry a publish after `OUTCOME_UNKNOWN`. Call `instagram_get_operation` with the approval or operation id to reconcile.
 4. Do not edit `config.json` by hand except for the documented keys, and keep it mode 0600. Secrets never go in it.
-5. Respect `CAPABILITY_UNAVAILABLE`: it names the other login path; tell the user rather than working around it.
+5. Respect `CAPABILITY_UNAVAILABLE`: it names the other login path (hashtag search on unified needs App Review); tell the user rather than working around it.
 6. Only the official Meta API is in scope. Do not suggest scraping, private endpoints or password logins.
 
 ## Installing for a user
@@ -18,15 +18,17 @@ Requirements: Node.js 22.13 or newer. `node dist/cli.js` and `instagram-mcp` (af
 ```sh
 git clone https://github.com/pratikgh0se/instagram-mcp.git
 cd instagram-mcp && npm ci && npm run build
-node dist/cli.js accounts add --alias main --login instagram          # facebook: --login facebook --page-id <PAGE_ID>
-node dist/cli.js auth set-app-secret                                  # user types it at the hidden prompt (both paths)
-node dist/cli.js auth set-token --account main --no-exchange          # instagram dashboard token; omit --no-exchange for the facebook path
+node dist/cli.js accounts add --alias main --login unified            # facebook: --login facebook --page-id <PAGE_ID>
+node dist/cli.js auth set-token --account main                        # hidden prompt; unified: ig_user_id is found automatically
+node dist/cli.js auth set-app-secret                                  # facebook path: required (token exchange); unified: optional; user types it at the hidden prompt
 node dist/cli.js doctor
 ```
 
-The user must create the Meta app and token themselves (SETUP.md sections C to H); you cannot do that for them. Ask them to run the two `set-*` commands in their own terminal, or have them pipe the value on stdin. Do not ask them to paste a secret into the chat.
+The user must create the Meta app and token themselves (SETUP.md sections C to H); you cannot do that for them. Unified path (recommended for new apps, no Facebook Page, needs a business portfolio): the token comes from the dashboard's "API setup with Unified login" (SETUP.md H2); add `business_management` to the configuration or every call fails with 100/33. Meta no longer offers the dashboard Instagram-login token (`--login instagram`) to apps; use it only for an app that still has it. If this install holds accounts from more than one Meta app, use `node dist/cli.js auth set-app-secret --account <alias>`. Unified publishing, delete, comment writes, DMs and webhooks are not yet live-tested.
 
-Facebook path: set the app id with `node dist/cli.js app set --app-id <APP_ID>` (or `accounts add ... --app-id <APP_ID>`) before `auth set-token`. An Instagram dashboard token that is already long-lived is stored as-is with a short note; `--no-exchange` skips the attempt.
+Ask them to run the two `set-*` commands in their own terminal, or have them pipe the value on stdin. Do not ask them to paste a secret into the chat.
+
+Facebook path: set the app id with `node dist/cli.js app set --app-id <APP_ID>` (or `accounts add ... --app-id <APP_ID>`) before `auth set-token`. On the legacy instagram path an already long-lived dashboard token is stored as-is with a short note; `--no-exchange` skips the attempt (it has no effect on unified).
 
 ## Client configuration
 
@@ -44,7 +46,7 @@ Recommend the user require confirmation on the `instagram_approve` tool only.
 
 ## Running doctor
 
-`node dist/cli.js doctor` (add `--json` for machine output). Exit 0 all good, 1 a check failed, 2 the config could not be loaded. Each non-pass check prints a `fix:` line; apply it or relay it. WARN lines for media host, daemon and webhooks are normal when those optional features are not set up. On the facebook path with webhooks enabled, a WARN `page_subscription` means the app is not subscribed to the linked Page: run `node dist/cli.js webhooks subscribe-page --account <alias>` (check with `webhooks page-subscription`). `auth status --check` gives token presence, expiry and a live `/me` result as JSON. A WARN `capabilities` means a cached no (an earlier failed probe); run `node dist/cli.js capabilities reset --account <alias>`.
+`node dist/cli.js doctor` (add `--json` for machine output). Exit 0 all good, 1 a check failed, 2 the config could not be loaded. Each non-pass check prints a `fix:` line; apply it or relay it. WARN lines for media host, daemon and webhooks are normal when those optional features are not set up. `app_credentials` and `page_subscription` do not apply to unified accounts (they ignore them). On the unified path there is no Page subscription (`webhooks subscribe-page` returns `CAPABILITY_UNAVAILABLE`); webhooks use the dashboard's "3. Configure webhooks" and the per-account Webhook Subscription toggle (unverified). On the facebook path with webhooks enabled, a WARN `page_subscription` means the app is not subscribed to the linked Page: run `node dist/cli.js webhooks subscribe-page --account <alias>` (check with `webhooks page-subscription`). `auth status --check` gives token presence, expiry and a live `/me` result as JSON. A WARN `capabilities` means a cached no (an earlier failed probe); run `node dist/cli.js capabilities reset --account <alias>`.
 
 ## Operating
 
@@ -53,7 +55,7 @@ Recommend the user require confirmation on the `instagram_approve` tool only.
 - Safe trial: set `policy.dry_run` to true; `instagram_approve` then returns `planned_calls` and sends nothing.
 - Scheduling needs a running daemon (`node dist/cli.js daemon`) or `scheduler run-once` from cron. `instagram_list_scheduled` shows status; only `scheduled` jobs can be canceled.
 - Local file publishing needs `media_host.public_base_url` and a tunnel (SETUP.md section M).
-- `MESSAGING_WINDOW_CLOSED` when sending a DM: do not retry. Either the 24 h window is closed, the app is still in Development mode (sends to Instagram Testers fail there; they work once the app is Live), or, per Meta, the recipient has no role on the app and the app has only Standard Access (needs Advanced Access, App Review). Tell the user which applies.
+- `MESSAGING_WINDOW_CLOSED` when sending a DM: do not retry. Either the 24 h window is closed, the app is still in Development mode (sends to Instagram Testers fail there; they work once the app is Live), or, per Meta, the recipient has no role on the app and the app has only Standard Access (needs Advanced Access, App Review). Tell the user which applies. On a unified account sending DMs is not yet live-tested; report the Meta error as is.
 - Errors are structured: `structuredContent.error` has `code`, `message`, `action`, `retryable`. Follow `action`.
 
 ## Where state lives

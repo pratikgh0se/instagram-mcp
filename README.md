@@ -8,7 +8,7 @@ MCP server for Instagram creators: publish, schedule, triage comments and DMs, a
 
 <!-- TODO: demo GIF (docs/demo.gif): real capture of Claude publishing a post with the approval step. -->
 
-Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Not yet live-tested: the Instagram Login path, and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
+Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Unified Login (the default for new apps) is live-tested for setup, the token and reads only. Not yet live-tested: publishing, delete, comment writes, sending DMs, the messaging profile and webhooks on the Unified path; the Instagram Login path; and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
 
 ## Install
 
@@ -58,30 +58,31 @@ The official API does not offer these, so this server does not either.
 - Direct messages in Development mode (facebook login path): `instagram_list_conversations` returns an empty list until the other participant has a role on the app (the Instagram Tester role; see [docs/SETUP.md](docs/SETUP.md) section F). Confirmed 2026-11-01; see docs/CONTRACT.md U29.
 - DM sending: in Development mode a send to an Instagram Tester failed with `MESSAGING_WINDOW_CLOSED` (Meta `(#10)`, subcode 2534022) even inside the 24 h window; once the app was Live (still Standard Access) the same send succeeded (confirmed 2026-11-01, facebook path). Sending to people with no role on the app needs Advanced Access for `instagram_manage_messages` per Meta (App Review; not tested). Private replies to comments work.
 - On the facebook path, real webhooks (comments and DMs) arrive only once the app is Live and subscribed to the Page (`webhooks subscribe-page`, default field `feed`, needs `pages_manage_metadata`; DMs need no extra permission). Going Live needs a public privacy policy page and data deletion page; templates and free hosting steps are in [docs/legal/](docs/legal/privacy-policy-template.md) and [docs/SETUP.md](docs/SETUP.md) section O.
-- The Instagram Login path and its token refresh are not live-tested by the maintainer; its setup steps follow Meta's docs.
-- `instagram_get_profile` returns `account_type: null` on the facebook login path (the Graph API does not provide it there); a warning says so.
+- Unified Login: only setup, the token and read calls were live-tested (2026-11-01). Publishing, delete, comment writes, sending DMs, the messaging profile and webhooks are not yet live-tested on this path. Hashtag search needs App Review (Meta code 10).
+- Instagram Login: Meta no longer offers the dashboard Instagram-login token to apps (confirmed 2026-11-01). The path remains for apps that already have it, and is not live-tested by the maintainer.
+- `instagram_get_profile` returns `account_type: null` on the facebook and unified login paths (the Graph API does not provide it there); a warning says so.
 - Mention replies work only for caption or comment @mentions, not photo tags.
 
 ## Which login path
 
-Each account is configured with one of two login paths. Both use only official endpoints.
+Each account is configured with one of three login paths. All use only official endpoints. Unified Login is the one to use for a new app without a Facebook Page; Meta no longer offers Instagram Login to apps.
 
-| Feature | Instagram Login | Facebook Login (for Business) |
-|---|---|---|
-| Needs a Facebook Page | No | Yes |
-| Publish by URL (image, reel, story, carousel) | Yes | Yes |
-| Publish local files | Images and video through the media host (needs a tunnel) | Video by resumable upload (no tunnel); images still through the media host |
-| Comments, mentions, insights, scheduling | Yes | Yes |
-| Direct messages | Probed (unverified) | Read: yes (role users in Development mode). Send: needs Advanced Access |
-| Delete media | Probed (unverified) | Yes |
-| Business discovery (competitor lookup, benchmarks) | No | Yes |
-| Hashtag search | No | Yes |
-| Branded content and paid partnership flags | Probed (unverified) | Yes |
-| Collaboration invites | Probed (unverified) | Yes |
-| `story_insights` webhook | No | Yes |
-| Token | 60 days, refreshable by the server | Long-lived Page token |
+| Feature | Unified Login (new apps) | Facebook Login (for Business) | Instagram Login (legacy) |
+|---|---|---|---|
+| Needs a Facebook Page | No (needs a business portfolio) | Yes | No |
+| Publish by URL (image, reel, story, carousel) | Yes (not yet live-tested) | Yes | Yes |
+| Publish local files | Video by resumable upload (no tunnel); images through the media host | Video by resumable upload (no tunnel); images still through the media host | Images and video through the media host (needs a tunnel) |
+| Comments, mentions, insights, scheduling | Insights read: confirmed; writes not yet live-tested | Yes | Yes |
+| Direct messages | Read: confirmed. Send: not yet live-tested | Read: yes (role users in Development mode). Send: needs Advanced Access | Probed (unverified) |
+| Delete media | Expected (not yet live-tested) | Yes | Probed (unverified) |
+| Business discovery (competitor lookup, benchmarks) | Yes (read confirmed) | Yes | No |
+| Hashtag search | Probed; needs App Review (code 10) | Yes | No |
+| Branded content and paid partnership flags | Probed | Yes | Probed (unverified) |
+| Collaboration invites | Probed | Yes | Probed (unverified) |
+| `story_insights` webhook | Yes (unverified) | Yes | No |
+| Token | System-user token, never expires | Long-lived Page token | 60 days, refreshable by the server |
 
-"Probed" means the server tries the call and, if Meta refuses it, remembers that for the account and returns `CAPABILITY_UNAVAILABLE` naming the other path. Recommendation: Facebook Login for full features, Instagram Login as the simpler path. [docs/SETUP.md](docs/SETUP.md) section B helps you choose.
+"Probed" means the server tries the call and, if Meta refuses it, remembers that for the account and returns `CAPABILITY_UNAVAILABLE` naming the other path. Recommendation: Unified Login for a new app without a Page (needs a business portfolio), Facebook Login for the path verified end to end. [docs/SETUP.md](docs/SETUP.md) section B helps you choose.
 
 ## Quick start
 
@@ -96,14 +97,14 @@ npm run build
 # Optional: put the CLI on your PATH. Otherwise use `node dist/cli.js` wherever this README says `instagram-mcp`.
 npm link
 
-instagram-mcp accounts add --alias main --login instagram      # facebook path: --login facebook --page-id <PAGE_ID> --app-id <APP_ID>
-instagram-mcp auth set-app-secret                              # hidden prompt; both paths (the facebook token exchange needs it)
-instagram-mcp auth set-token --account main --no-exchange      # instagram path: paste the dashboard token (hidden prompt) or pipe it on stdin
-# facebook path instead: instagram-mcp auth set-token --account main   (omit --no-exchange)
+instagram-mcp accounts add --alias main --login unified        # facebook path: --login facebook --page-id <PAGE_ID> --app-id <APP_ID>
+instagram-mcp auth set-token --account main                    # hidden prompt, or pipe it on stdin; ig_user_id is found automatically
+# facebook path only: instagram-mcp auth set-app-secret         (hidden prompt; the token exchange needs it)
+# optional on unified: instagram-mcp auth set-app-secret --account main   (per-account secret, useful with accounts from more than one Meta app)
 instagram-mcp doctor
 ```
 
-The facebook path needs three things: the Page ID, the app ID and the app secret. A Graph API Explorer token lasts about 1 hour, so run `auth set-token` right after generating it; without the app secret the long-lived exchange fails and the token expires within the hour.
+The unified path needs the token from the dashboard's "API setup with Unified login" (see [docs/SETUP.md](docs/SETUP.md) section H2); the app ID and Page ID are not needed. The facebook path needs three things: the Page ID, the app ID and the app secret. A Graph API Explorer token lasts about 1 hour, so run `auth set-token` right after generating it; without the app secret the long-lived exchange fails and the token expires within the hour.
 
 Before this works you need a Professional Instagram account, a Meta app and a token. [docs/SETUP.md](docs/SETUP.md) walks through that from "no Meta developer account", step by step. `doctor` prints PASS, WARN or FAIL per check with a fix for each. If a feature wrongly reports `CAPABILITY_UNAVAILABLE` (a cached "no"), clear it with `instagram-mcp capabilities reset --account <alias>`.
 
@@ -180,7 +181,7 @@ One daemon runs per state directory. Ready-made [launchd](examples/com.instagram
 
 ## Webhooks
 
-The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a stable public HTTPS URL (a named Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) sections O and P.
+The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a stable public HTTPS URL (a named Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Unified Login path use the dashboard's "3. Configure webhooks" and the per-account Webhook Subscription toggle (no Page subscription; unverified). On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) sections O and P.
 
 ## Security model
 
