@@ -59,10 +59,10 @@ Everything beyond that (local file upload, scheduling, webhooks) is optional.
 | | Unified Login | Facebook Login | Instagram Login |
 |---|---|---|---|
 | Offered to new apps by Meta | Yes (the default) | Yes | No, only apps that already have it |
-| Verified end to end by the maintainer | Reads and the token flow: yes, live on 2026-11-01. Publishing, delete, comment writes, sending DMs, messaging profile and webhooks: not yet | Yes, live on 2026-11-01 | No |
+| Verified end to end by the maintainer | Yes, live on 2026-11-01 (app Live, Standard Access): token, reads, publishing, scheduling, delete, comment writes, conversations, DMs to an Instagram Tester, messaging profile. Real webhook events: not delivered (U42) | Yes, live on 2026-11-01 | No |
 | Where steps come from | A live click-through | A live click-through | Meta's published docs, fetched 2026-11-01 |
 
-Unified Login note: what was confirmed live is the setup, the token, and read calls (profile, media, stories, tags, insights, conversations, business discovery, publishing limit). Publishing, delete, comment writes, sending DMs, the messaging profile and webhooks are untested on this path. They are expected to work like the Facebook path and will be live-tested next. Verified live: (not yet).
+Unified Login note: confirmed live on 2026-11-01 with the app Live at Standard Access: setup and token; reads (profile, media, stories, tags, insights, conversations, business discovery, publishing limit); publishing by URL (image, carousel, reel, story) and local files (image through the media host, reel by resumable upload); scheduling through the daemon; delete; comment writes (comment, reply, hide/unhide own, delete, comments off/on); sending a DM to an Instagram Tester inside the 24 h window (worked while the tester's invite was still pending); messaging profile ice breakers. Not confirmed: real webhook events (the dashboard Test event arrives, live comments and DMs did not; see section P), collaboration invites, branded content, and hide or private reply on another person's comment or a mention (need a second account). While Meta withholds message senders on this path, conversation results carry `senders: "webhooks"` or `"unavailable"` (contract U41).
 
 Instagram Login note: Meta no longer offers "API setup with Instagram login" to apps (confirmed 2026-11-01: a banner says it is not available for newer apps). The path has not been live-tested by the maintainer. Its steps below follow Meta's older pages ([get started](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/get-started), fetched 2026-11-01). Use it only if your app already shows that entry. If a label differs on your screen, follow Meta's page in parallel and tell us.
 
@@ -100,11 +100,11 @@ They are the same program. After `npm link` (section I) you can type `instagram-
 | Token | System-user token from the dashboard; never expires | Graph API Explorer user token; the server exchanges it for a Page token that does not expire | Dashboard token, 60 days, refreshable |
 | Local image upload | Needs the media host (section M) | Needs the media host (section M) | Needs the media host |
 | Local video upload | Resumable upload, no tunnel | Resumable upload, no tunnel | Needs the media host |
-| Delete media | Expected (unverified) | Yes | Unverified, probed |
+| Delete media | Yes (confirmed 2026-11-01) | Yes | Unverified, probed |
 | Competitor lookup, benchmarks | Yes (read confirmed 2026-11-01) | Yes | No |
 | Hashtag search | Probed; needs App Review (Meta code 10) | Yes | No |
-| Branded content flags | Probed | Yes | Unverified, probed |
-| Verified live | Reads and token only | Yes | No |
+| Branded content flags | Probed (needs a real sponsor to test) | Yes | Unverified, probed |
+| Verified live | Yes, 2026-11-01, except real webhook events | Yes | No |
 
 Recommendation:
 
@@ -233,7 +233,7 @@ The Unified Login column uses the same scope names as Facebook Login, plus `busi
 | Read DMs | `instagram_business_manage_messages` | `instagram_manage_messages` | Only for people with a role (Instagram Tester); Facebook path confirmed 2026-11-01 |
 | Send DMs | same as above | same as above | Role holders: works once the app is Live, fails in Development mode (confirmed 2026-11-01, facebook path). People with no role: needs Advanced Access (Meta docs, untested) |
 | Private reply to a comment | same as above | same as above | Yes (Facebook path confirmed 2026-11-01) |
-| Delete media | `instagram_manage_contents` (unverified on this path) | `instagram_manage_contents` | Yes (Facebook path) |
+| Delete media | `instagram_manage_contents` (confirmed live on this path 2026-11-01) | `instagram_manage_contents` | Yes (Facebook path) |
 | Business discovery (competitors) | Not available | `pages_read_engagement` (Facebook path); Unified: read confirmed 2026-11-01 | Unified: yes. Facebook: not tested |
 | Hashtag search | Not available | **Instagram Public Content Access** feature | Not confirmed; Meta normally grants it through App Review |
 | Webhooks (Page subscription) | n/a | `pages_manage_metadata` (Facebook path only; not used on Unified) | Needs Live, see section O |
@@ -242,7 +242,7 @@ The Unified Login column uses the same scope names as Facebook Login, plus `busi
 
 Also add `business_management` in Graph API Explorer on the Facebook path (it was part of the permission set in the live run). On the Unified path it is required, see H2.
 
-The Unified rows for publishing, comments and DMs list the configuration template's scopes; whether each action works on that path is unverified except reads (see the status note in section A).
+The Unified rows for publishing, comments and DMs list the configuration template's scopes; publishing, comment writes, delete and sending DMs to role holders were confirmed live on that path on 2026-11-01 (see the status note in section A).
 
 ### OAuth redirect URL
 
@@ -541,7 +541,7 @@ Cron alternative without a daemon: run `instagram-mcp scheduler run-once` every 
 
 ## O. Optional: Go Live (needed for real webhooks)
 
-On the Facebook path, real webhooks arrive only once the app is Live (confirmed 2026-11-01). The Unified path is expected to need the same; unverified. Going Live worked without Business Verification for an app serving only the owner's own account, after adding the four items below. Meta's [create an Instagram app page](https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md) says "Business Verification is required before you can publish"; the live run did not need it. Treat that as observed 2026-11-01 and subject to change.
+On the Facebook path, real webhooks arrive only once the app is Live (confirmed 2026-11-01). On the Unified path the dashboard Test event arrives but real events did not (U42; probably needs App Review, unconfirmed). Going Live worked without Business Verification for an app serving only the owner's own account, after adding the four items below. Meta's [create an Instagram app page](https://developers.facebook.com/documentation/instagram-platform/create-an-instagram-app.md) says "Business Verification is required before you can publish"; the live run did not need it. Treat that as observed 2026-11-01 and subject to change.
 
 ### O1. Host the two pages (free, GitHub Pages)
 
@@ -571,7 +571,7 @@ Any other static host (Cloudflare Pages, Netlify, your own site) works the same 
 
 You should see: the app shown as **Live**.
 
-What changes: your role holders still work, webhooks now deliver, and sending DMs to role holders (for example an Instagram Tester) now works (confirmed 2026-11-01, facebook path; unverified on the Unified path). What does not change: you still have Standard Access, so sending DMs to people without a role still needs Advanced Access per Meta (untested, section Q). Serving other people's accounts needs App Review and Advanced Access.
+What changes: your role holders still work, webhooks now deliver, and sending DMs to role holders (for example an Instagram Tester) now works (confirmed 2026-11-01 on the Facebook and Unified paths). What does not change: you still have Standard Access, so sending DMs to people without a role still needs Advanced Access per Meta (untested, section Q). Serving other people's accounts needs App Review and Advanced Access.
 
 ## P. Optional: webhooks
 
@@ -585,7 +585,7 @@ Requirements: the daemon (section N) listening on port 8765, a stable public HTT
 4. Start the daemon, then run `instagram-mcp doctor`: `[PASS] webhooks`. Check the tunnel: `curl -i "https://hooks.yourdomain.example/webhooks/instagram?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1"` should return `403` (reaching the server proves the route works). Do not put your real verify token in a logged command line.
 5. In the Meta dashboard: **API setup with Unified login**, section **3. Configure webhooks** (Facebook path: **API setup with Facebook login**; legacy Instagram path: **API setup with Instagram login**). Enter the **Callback URL** `https://hooks.yourdomain.example/webhooks/instagram` and the **Verify token**, then **Verify and save**. The daemon must be running.
 6. Subscribe to fields in that dashboard section: `comments`, `mentions`, `messages`, `message_reactions`, `messaging_postbacks` (and `story_insights` on the Facebook path). This dashboard field subscription is separate from the Page subscription in step 8; the server never toggles dashboard fields for you.
-7. Unified Login (webhooks unverified): turn on the per-account **Webhook Subscription** toggle next to your account in the API setup page. There is no Page subscription on this path, and `webhooks subscribe-page` returns `CAPABILITY_UNAVAILABLE` for a Unified account. The same applies to the legacy Instagram Login path (not live-tested).
+7. Unified Login (Test event works; real events not delivered, U42): turn on the per-account **Webhook Subscription** toggle next to your account in the API setup page. There is no Page subscription on this path, and `webhooks subscribe-page` returns `CAPABILITY_UNAVAILABLE` for a Unified account. The same applies to the legacy Instagram Login path (not live-tested).
 8. Facebook path only (not needed on Unified), required for real events: subscribe the app to the linked Page.
 
    ```sh
@@ -599,7 +599,7 @@ Meta may deliver webhook events for accounts you do not own only after Advanced 
 
 ## Q. What works in Development mode and at Standard Access
 
-All of the following were observed on the Facebook path on 2026-11-01 unless marked otherwise. On the Unified path only reads were confirmed (profile, media, stories, tags, insights, conversations, business discovery); the writes, sending DMs and webhooks rows are expected to match but are unverified. Unified Login adds no Page subscription step.
+All of the following were observed on the Facebook path on 2026-11-01 unless marked otherwise. On the Unified path the writes and sending DMs rows were also confirmed; the webhooks row was not: the dashboard Test event arrived signed, but real comments and DMs were delivered only to a second Facebook-path app watching the same account (Meta says App Review is needed before an app can access live data; unconfirmed). Unified Login adds no Page subscription step.
 
 | Capability | Result |
 |---|---|
@@ -641,7 +641,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | Instagram Tester invite stays "pending" | Not accepted | Accept at https://www.instagram.com/accounts/manage_access/ in a desktop browser (section F) |
 | `webhooks subscribe-page` fails with a permission error | Token has no `pages_manage_metadata` | Section P step 8 |
 | Webhooks never arrive on the Facebook path | App not Live, or Page not subscribed | Sections O and P step 8; `webhooks page-subscription` |
-| Webhooks never arrive on the Unified path (unverified) | App not Live, or the per-account Webhook Subscription toggle is off | Sections O and P step 7 |
+| Webhooks never arrive on the Unified path | App not Live, the per-account Webhook Subscription toggle is off, or (observed 2026-11-01 with all of those right) Meta does not deliver live data to an app without App Review | Sections O and P step 7 |
 | Claude Desktop: "server disconnected" or `spawn node ENOENT` | Desktop does not read your shell PATH (nvm), or a wrong cli.js path | Use the absolute node path from `command -v node` and an absolute cli.js path (section K) |
 | macOS keychain prompt every run | Keychain item ACL | Choose Always Allow, or use the `encrypted-file` backend |
 | App will not add the account | Account is private or not Professional | Section C |

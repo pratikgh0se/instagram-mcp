@@ -8,7 +8,7 @@ MCP server for Instagram creators: publish, schedule, triage comments and DMs, a
 
 <!-- TODO: demo GIF (docs/demo.gif): real capture of Claude publishing a post with the approval step. -->
 
-Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Unified Login (the default for new apps) is live-tested for setup, the token and reads only. Not yet live-tested: publishing, delete, comment writes, sending DMs, the messaging profile and webhooks on the Unified path; the Instagram Login path; and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
+Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Unified Login (the default for new apps) was also run end to end on 2026-11-01 with the app Live at Standard Access: setup, token, reads, publishing (URL and local files), scheduling, delete, comment writes, conversations, sending a DM to an Instagram Tester and the messaging profile. Not confirmed: real webhook events on the Unified path (Meta's Test event arrives, live comments and DMs did not; probably needs App Review); the Instagram Login path; collaboration invites and branded content; and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
 
 ## Install
 
@@ -58,7 +58,7 @@ The official API does not offer these, so this server does not either.
 - Direct messages in Development mode (facebook login path): `instagram_list_conversations` returns an empty list until the other participant has a role on the app (the Instagram Tester role; see [docs/SETUP.md](docs/SETUP.md) section F). Confirmed 2026-11-01; see docs/CONTRACT.md U29.
 - DM sending: in Development mode a send to an Instagram Tester failed with `MESSAGING_WINDOW_CLOSED` (Meta `(#10)`, subcode 2534022) even inside the 24 h window; once the app was Live (still Standard Access) the same send succeeded (confirmed 2026-11-01, facebook path). Sending to people with no role on the app needs Advanced Access for `instagram_manage_messages` per Meta (App Review; not tested). Private replies to comments work.
 - On the facebook path, real webhooks (comments and DMs) arrive only once the app is Live and subscribed to the Page (`webhooks subscribe-page`, default field `feed`, needs `pages_manage_metadata`; DMs need no extra permission). Going Live needs a public privacy policy page and data deletion page; templates and free hosting steps are in [docs/legal/](docs/legal/privacy-policy-template.md) and [docs/SETUP.md](docs/SETUP.md) section O.
-- Unified Login: only setup, the token and read calls were live-tested (2026-11-01). Publishing, delete, comment writes, sending DMs, the messaging profile and webhooks are not yet live-tested on this path. Hashtag search needs App Review (Meta code 10).
+- Unified Login: live-tested 2026-11-01 (app Live, Standard Access) for setup, token, reads, publishing, scheduling, delete, comment writes, conversations, DMs to an Instagram Tester and the messaging profile. Real webhook events were not delivered to a Unified app (Test event only; see Webhooks). Hashtag search needs App Review (Meta code 10).
 - Instagram Login: Meta no longer offers the dashboard Instagram-login token to apps (confirmed 2026-11-01). The path remains for apps that already have it, and is not live-tested by the maintainer.
 - `instagram_get_profile` returns `account_type: null` on the facebook and unified login paths (the Graph API does not provide it there); a warning says so.
 - Mention replies work only for caption or comment @mentions, not photo tags.
@@ -70,16 +70,16 @@ Each account is configured with one of three login paths. All use only official 
 | Feature | Unified Login (new apps) | Facebook Login (for Business) | Instagram Login (legacy) |
 |---|---|---|---|
 | Needs a Facebook Page | No (needs a business portfolio) | Yes | No |
-| Publish by URL (image, reel, story, carousel) | Yes (not yet live-tested) | Yes | Yes |
+| Publish by URL (image, reel, story, carousel) | Yes (confirmed 2026-11-01) | Yes | Yes |
 | Publish local files | Video by resumable upload (no tunnel); images through the media host | Video by resumable upload (no tunnel); images still through the media host | Images and video through the media host (needs a tunnel) |
-| Comments, mentions, insights, scheduling | Insights read: confirmed; writes not yet live-tested | Yes | Yes |
-| Direct messages | Read: confirmed. Send: not yet live-tested | Read: yes (role users in Development mode). Send: needs Advanced Access | Probed (unverified) |
-| Delete media | Expected (not yet live-tested) | Yes | Probed (unverified) |
+| Comments, mentions, insights, scheduling | Insights, scheduling and own-comment writes (comment, reply, hide/unhide own, delete, comments off/on): confirmed. Hide or private reply on others' comments and mentions: not tested | Yes | Yes |
+| Direct messages | Read and send (to an Instagram Tester inside 24 h, app Live): confirmed 2026-11-01; ice breakers set/clear confirmed | Read: yes (role users in Development mode). Send: needs Advanced Access | Probed (unverified) |
+| Delete media | Yes (confirmed 2026-11-01) | Yes | Probed (unverified) |
 | Business discovery (competitor lookup, benchmarks) | Yes (read confirmed) | Yes | No |
 | Hashtag search | Probed; needs App Review (code 10) | Yes | No |
-| Branded content and paid partnership flags | Probed | Yes | Probed (unverified) |
-| Collaboration invites | Probed | Yes | Probed (unverified) |
-| `story_insights` webhook | Yes (unverified) | Yes | No |
+| Branded content and paid partnership flags | Probed (needs a real sponsor to test) | Yes | Probed (unverified) |
+| Collaboration invites | Probed (no invite to respond to) | Yes | Probed (unverified) |
+| `story_insights` webhook | Unverified (real webhook events did not arrive on Unified) | Yes | No |
 | Token | System-user token, never expires | Long-lived Page token | 60 days, refreshable by the server |
 
 "Probed" means the server tries the call and, if Meta refuses it, remembers that for the account and returns `CAPABILITY_UNAVAILABLE` naming the other path. Recommendation: Unified Login for a new app without a Page (needs a business portfolio), Facebook Login for the path verified end to end. [docs/SETUP.md](docs/SETUP.md) section B helps you choose.
@@ -181,7 +181,7 @@ One daemon runs per state directory. Ready-made [launchd](examples/com.instagram
 
 ## Webhooks
 
-The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a stable public HTTPS URL (a named Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Unified Login path use the dashboard's "3. Configure webhooks" and the per-account Webhook Subscription toggle (no Page subscription; unverified). On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) sections O and P.
+The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a stable public HTTPS URL (a named Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Unified Login path use the dashboard's "3. Configure webhooks" and the per-account Webhook Subscription toggle (no Page subscription). Observed 2026-11-01: the dashboard's Test event reaches the daemon signed and attributed to the Unified account, but real comments and DMs were not delivered to the Unified app (probably needs App Review / Advanced Access; unconfirmed), so the inbox relies on polling there. On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) sections O and P.
 
 ## Security model
 
