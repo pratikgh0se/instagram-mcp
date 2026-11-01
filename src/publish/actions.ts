@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import type { AppContext } from '../context.js';
-import { AppError } from '../errors.js';
+import { AppError, isAppError } from '../errors.js';
 import { withProbe } from '../graph/capabilities.js';
 import { cleanupStaging } from '../media-host/index.js';
 import { registerAction, registerJob, type ActionContext } from '../safety/index.js';
@@ -49,6 +49,8 @@ const runtime = async (actx: ActionContext): Promise<Runtime> => {
   return { ctx: actx, account: actx.actionAccount, graph, ig: await graph.igUserId() };
 };
 
+const DELETE_NO_VERIFY = new Set<string>(['CAPABILITY_UNAVAILABLE', 'AUTH_FAILED', 'TOKEN_EXPIRED', 'RATE_LIMITED']);
+
 export function registerPublishActions(): void {
   registerAction<PublishParams>({
     name: 'publish',
@@ -95,8 +97,40 @@ export function registerPublishActions(): void {
       return 'exists';
     },
     async execute(actx, params) {
-      await withProbe(actx, actx.actionAccount, 'delete_media', () => actx.graph().delete(`/${params.media_id}`));
-      return { media_id: params.media_id, deleted: true };
+      try {
+        await withProbe(actx, actx.actionAccount, 'delete_media', () => actx.graph().delete(`/${params.media_id}`));
+        return { media_id: params.media_id, deleted: true };
+      } catch (error) {
+        // Contract 2.x delete_media / U35: Meta can answer a DELETE with an error although the media is gone.
+        if (!isAppError(error) || DELETE_NO_VERIFY.has(error.code)) throw error;
+        let verified: unknown;
+        try {
+          await actx.graph().get(`/${params.media_id}`, { fields: 'id' });
+          verified = 'exists';
+        } catch (verifyError) {
+          verified = verifyError;
+        }
+        if (verified === 'exists') {
+          // The media still exists, so the DELETE definitely did not apply: not ambiguous any more.
+          if (error.details && 'ambiguous' in error.details) {
+            const { ambiguous: _ambiguous, ...rest } = error.details;
+            throw new AppError(error.code, error.message, { action: error.action, retryable: error.retryable, details: rest });
+          }
+          throw error;
+        }
+        if (isAppError(verified) && verified.code === 'NOT_FOUND') {
+          const meta = error.details?.meta as { code?: number; subcode?: number } | undefined;
+          return {
+            media_id: params.media_id,
+            deleted: true,
+            verified_after_error: { code: error.code, meta_code: meta?.code ?? null, meta_subcode: meta?.subcode ?? null }
+          };
+        }
+        throw new AppError('OUTCOME_UNKNOWN', `The DELETE failed (${error.code}) and the follow-up check could not confirm whether the media still exists.`, {
+          details: { reconcile: { media_id: params.media_id } },
+          action: 'Check with instagram_get_media whether the media still exists before retrying.'
+        });
+      }
     }
   });
 
