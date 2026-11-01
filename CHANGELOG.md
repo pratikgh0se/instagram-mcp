@@ -16,15 +16,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - Webhooks: DM (`messaging`) entries send `entry.time` in Unix milliseconds; it was read as seconds, giving far-future `received_at` values that broke inbox ordering and retention pruning. Values >= 10^12 are now read as milliseconds, and unusable values fall back to the clock at receipt (contract 5, U34).
-
-### Documentation
-- SETUP: "Testing DMs in Development mode" (Instagram Tester role) and "Going Live"; webhook step notes Live plus Page subscription. README known limitations: DM sending not live-verified, real DM webhooks unconfirmed, Instagram Login path and token refresh not live-verified.
-
-### Changed
-- Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.
-- Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
-
-### Fixed
 - `conversation_id` accepts Meta's ~130-character ids (limit 256).
 - `instagram_get_media` (and download, delete preview, comments toggle preview) now work on Stories: on Meta's "(#10) Comments cannot be made on story media." the call is retried once without comment fields, which come back `null`.
 - Meta code 10 is no longer always `MISSING_PERMISSION`: "story media" maps to `UPSTREAM_REJECTED`, "User is not mentioned in the caption" maps to `INVALID_INPUT` with an action explaining that photo tags cannot be replied to.
@@ -39,6 +30,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `doctor` checks each account's `/me` and quota request before moving on to the next account.
 - HTTP `Origin` must exactly equal an `allowed_origins` entry.
 - Plain-http Graph endpoints send `Connection: close` (avoids ~500 ms keep-alive stalls that starved the container poll loop).
+
+### Documentation
+- SETUP rewritten for a new user (2026-11-01): developer account registration, per-path app creation, Roles and Instagram Tester procedure, permission-per-feature table, access levels and App Review, Go Live steps, webhook prerequisites, Development-mode capability table, setup-phase troubleshooting and a contents list. The Instagram Login path is documented from Meta's pages and noted as not live-tested.
+- New `docs/legal/` privacy policy and data deletion templates, with free GitHub Pages hosting steps (needed to go Live).
+- README quick start now includes `auth set-app-secret` and the facebook app id; known limitations updated (DM read and webhooks confirmed live, DM send needs Advanced Access).
+- Media host docs: Cloudflare quick tunnel (no domain) and named tunnel. Examples: launchd plist uses the output of `command -v node`; Claude Desktop config uses the absolute node path. AGENTS.md: DM send limit and install notes.
+
+### Changed
+- Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.
+- Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
 
 ## [1.0.0-rc.1] - 2026-10-29
 

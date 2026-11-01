@@ -13,18 +13,18 @@ Playbook for an AI agent that installs or operates instagram-mcp for a user. Hum
 
 ## Installing for a user
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Node.js 22.13 or newer. `node dist/cli.js` and `instagram-mcp` (after `npm link`) are the same program.
 
 ```sh
 git clone https://github.com/pratikgh0se/instagram-mcp.git
 cd instagram-mcp && npm ci && npm run build
 node dist/cli.js accounts add --alias main --login instagram          # facebook: --login facebook --page-id <PAGE_ID>
-node dist/cli.js auth set-app-secret                                  # user types it at the hidden prompt
+node dist/cli.js auth set-app-secret                                  # user types it at the hidden prompt (both paths)
 node dist/cli.js auth set-token --account main --no-exchange          # instagram dashboard token; omit --no-exchange for the facebook path
 node dist/cli.js doctor
 ```
 
-The user must create the Meta app and token themselves (SETUP.md sections B to D); you cannot do that for them. Ask them to run the two `set-*` commands in their own terminal, or have them pipe the value on stdin. Do not ask them to paste a secret into the chat.
+The user must create the Meta app and token themselves (SETUP.md sections C to H); you cannot do that for them. Ask them to run the two `set-*` commands in their own terminal, or have them pipe the value on stdin. Do not ask them to paste a secret into the chat.
 
 Facebook path: set the app id with `node dist/cli.js app set --app-id <APP_ID>` (or `accounts add ... --app-id <APP_ID>`) before `auth set-token`. An Instagram dashboard token that is already long-lived is stored as-is with a short note; `--no-exchange` skips the attempt.
 
@@ -52,7 +52,8 @@ Recommend the user require confirmation on the `instagram_approve` tool only.
 - Multiple accounts: pass `account` (alias) on every tool call, or rely on `default_account`.
 - Safe trial: set `policy.dry_run` to true; `instagram_approve` then returns `planned_calls` and sends nothing.
 - Scheduling needs a running daemon (`node dist/cli.js daemon`) or `scheduler run-once` from cron. `instagram_list_scheduled` shows status; only `scheduled` jobs can be canceled.
-- Local file publishing needs `media_host.public_base_url` and a tunnel (SETUP.md section F).
+- Local file publishing needs `media_host.public_base_url` and a tunnel (SETUP.md section M).
+- `MESSAGING_WINDOW_CLOSED` when sending a DM under Standard Access (even to an Instagram Tester) is a known limit: do not retry; tell the user sending needs Advanced Access (App Review).
 - Errors are structured: `structuredContent.error` has `code`, `message`, `action`, `retryable`. Follow `action`.
 
 ## Where state lives

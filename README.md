@@ -43,10 +43,10 @@ The official API does not offer these, so this server does not either.
 
 ## Known limitations
 
-- Direct messages in Development mode (facebook login path): `instagram_list_conversations` returns an empty list until the other participant has a role on the app (for example Instagram Tester; see docs/SETUP.md, "Testing DMs in Development mode"). Observed 2026-11-01; see docs/CONTRACT.md U29.
-- Sending DMs is not live-verified. To an Instagram Tester, send failed with Meta `(#10) This message is sent outside of allowed window` (`MESSAGING_WINDOW_CLOSED`) even right after they messaged. Meta says Standard Access apps can only message people with a role on the app; sending to the public needs Advanced Access for `instagram_manage_messages` (App Review, Business Verification). Private replies to comments were verified.
-- On the facebook path, real webhooks (comments and DMs) arrive only once the app is Live and subscribed to the Page (`webhooks subscribe-page`, default field `feed`; DMs need no extra permission).
-- The Instagram Login path and its token refresh are not live-verified.
+- Direct messages in Development mode (facebook login path): `instagram_list_conversations` returns an empty list until the other participant has a role on the app (the Instagram Tester role; see [docs/SETUP.md](docs/SETUP.md) section F). Confirmed 2026-11-01; see docs/CONTRACT.md U29.
+- Sending DMs fails under Standard Access: to an Instagram Tester, send failed with Meta `(#10) This message is sent outside of allowed window` (`MESSAGING_WINDOW_CLOSED`) even right after they messaged (observed 2026-11-01). Sending needs Advanced Access for `instagram_manage_messages` (App Review). Private replies to comments work.
+- On the facebook path, real webhooks (comments and DMs) arrive only once the app is Live and subscribed to the Page (`webhooks subscribe-page`, default field `feed`, needs `pages_manage_metadata`; DMs need no extra permission). Going Live needs a public privacy policy page and data deletion page; templates and free hosting steps are in [docs/legal/](docs/legal/privacy-policy-template.md) and [docs/SETUP.md](docs/SETUP.md) section O.
+- The Instagram Login path and its token refresh are not live-tested by the maintainer; its setup steps follow Meta's docs.
 - `instagram_get_profile` returns `account_type: null` on the facebook login path (the Graph API does not provide it there); a warning says so.
 - Mention replies work only for caption or comment @mentions, not photo tags.
 
@@ -60,7 +60,7 @@ Each account is configured with one of two login paths. Both use only official e
 | Publish by URL (image, reel, story, carousel) | Yes | Yes |
 | Publish local files | Images and video through the media host (needs a tunnel) | Video by resumable upload (no tunnel); images still through the media host |
 | Comments, mentions, insights, scheduling | Yes | Yes |
-| Direct messages | Yes | Probed (Messenger Platform on the Page); unverified |
+| Direct messages | Probed (unverified) | Read: yes (role users in Development mode). Send: needs Advanced Access |
 | Delete media | Probed (unverified) | Yes |
 | Business discovery (competitor lookup, benchmarks) | No | Yes |
 | Hashtag search | No | Yes |
@@ -69,7 +69,7 @@ Each account is configured with one of two login paths. Both use only official e
 | `story_insights` webhook | No | Yes |
 | Token | 60 days, refreshable by the server | Long-lived Page token |
 
-"Probed" means the server tries the call and, if Meta refuses it, remembers that for the account and returns `CAPABILITY_UNAVAILABLE` naming the other path. Recommendation: Facebook Login for full features, Instagram Login as the simpler path. [docs/SETUP.md](docs/SETUP.md) section A helps you choose.
+"Probed" means the server tries the call and, if Meta refuses it, remembers that for the account and returns `CAPABILITY_UNAVAILABLE` naming the other path. Recommendation: Facebook Login for full features, Instagram Login as the simpler path. [docs/SETUP.md](docs/SETUP.md) section B helps you choose.
 
 ## Quick start
 
@@ -85,15 +85,19 @@ npm run build
 npm link
 
 instagram-mcp accounts add --alias main --login instagram      # facebook path: --login facebook --page-id <PAGE_ID> --app-id <APP_ID>
-instagram-mcp auth set-token --account main                    # paste the token (hidden prompt) or pipe it on stdin
+instagram-mcp auth set-app-secret                              # hidden prompt; both paths (the facebook token exchange needs it)
+instagram-mcp auth set-token --account main --no-exchange      # instagram path: paste the dashboard token (hidden prompt) or pipe it on stdin
+# facebook path instead: instagram-mcp auth set-token --account main   (omit --no-exchange)
 instagram-mcp doctor
 ```
 
-Before this works you need a Professional Instagram account, a Meta app and a token. [docs/SETUP.md](docs/SETUP.md) walks through that step by step. `doctor` prints PASS, WARN or FAIL per check with a fix for each.
+The facebook path needs three things: the Page ID, the app ID and the app secret. A Graph API Explorer token lasts about 1 hour, so run `auth set-token` right after generating it; without the app secret the long-lived exchange fails and the token expires within the hour.
+
+Before this works you need a Professional Instagram account, a Meta app and a token. [docs/SETUP.md](docs/SETUP.md) walks through that from "no Meta developer account", step by step. `doctor` prints PASS, WARN or FAIL per check with a fix for each.
 
 ## Connect an MCP client
 
-Use absolute paths. Replace `/ABSOLUTE/PATH/TO/instagram-mcp` with your clone.
+Use absolute paths. Replace `/ABSOLUTE/PATH/TO/instagram-mcp` with your clone. For Claude Desktop also use the absolute node path from `command -v node` (Desktop does not read your shell PATH, so an nvm-installed node is not found by a bare `node`).
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -101,7 +105,7 @@ Claude Desktop (`claude_desktop_config.json`):
 {
   "mcpServers": {
     "instagram": {
-      "command": "node",
+      "command": "/ABSOLUTE/PATH/TO/node",
       "args": ["/ABSOLUTE/PATH/TO/instagram-mcp/dist/cli.js", "serve"]
     }
   }
@@ -160,11 +164,11 @@ instagram-mcp daemon            # scheduler, webhooks (if enabled), daily snapsh
 instagram-mcp daemon --http     # also serves the MCP endpoint over HTTP
 ```
 
-One daemon runs per state directory. Ready-made [launchd](examples/com.instagram-mcp.daemon.plist) and [systemd](examples/instagram-mcp-daemon.service) files and a [Dockerfile](Dockerfile) are included. See [docs/SETUP.md](docs/SETUP.md) section G.
+One daemon runs per state directory. Ready-made [launchd](examples/com.instagram-mcp.daemon.plist) and [systemd](examples/instagram-mcp-daemon.service) files and a [Dockerfile](Dockerfile) are included. See [docs/SETUP.md](docs/SETUP.md) section N.
 
 ## Webhooks
 
-The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a public HTTPS URL (a Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) section H.
+The daemon can receive Instagram webhooks (comments, mentions, messages and more) on `POST /webhooks/instagram`, verifying `X-Hub-Signature-256` with your app secret. It needs a stable public HTTPS URL (a named Cloudflare Tunnel works; see [examples/cloudflared-config.yml](examples/cloudflared-config.yml)). Without webhooks, the inbox polls the API instead. On the Facebook Login path, run `instagram-mcp webhooks subscribe-page --account <alias>` once so Meta delivers real events (`webhooks page-subscription` shows the state). Setup: [docs/SETUP.md](docs/SETUP.md) sections O and P.
 
 ## Security model
 
@@ -182,7 +186,8 @@ Details and the threat model: [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md). 
 
 | Document | Contents |
 |---|---|
-| [docs/SETUP.md](docs/SETUP.md) | Step-by-step Meta, token, install, tunnel, daemon and webhook setup |
+| [docs/SETUP.md](docs/SETUP.md) | Step-by-step from a new Meta developer account: app, token, install, tunnel, daemon, Go Live and webhooks |
+| [docs/legal/](docs/legal/privacy-policy-template.md) | Privacy policy and [data deletion](docs/legal/data-deletion-template.md) templates for going Live |
 | [docs/TOOLS.md](docs/TOOLS.md) | Generated tool reference |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Behaviour contract |
 | [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md) | Live end-to-end checklist and unverified upstream facts |

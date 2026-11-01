@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Copy to ~/Library/LaunchAgents/com.instagram-mcp.daemon.plist, edit the placeholders, then:
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.instagram-mcp.daemon.plist
+     Node path: run `command -v node` and paste the result below (Apple Silicon Homebrew: /opt/homebrew/bin/node;
+     Intel Homebrew: /usr/local/bin/node; nvm: the absolute path under ~/.nvm).
      Secrets live in the keychain (secrets.backend "keychain"); do not put tokens in this file. -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.instagram-mcp.daemon</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/node</string>
+    <string>/ABSOLUTE/PATH/TO/node</string>
     <string>/ABSOLUTE/PATH/TO/instagram-mcp/dist/cli.js</string>
     <string>daemon</string>
   </array>
