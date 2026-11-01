@@ -12,7 +12,7 @@ export interface PageSubscription {
 
 interface SubscribedApp { id?: unknown; subscribed_fields?: unknown }
 
-export const DEFAULT_PAGE_FIELDS = 'feed,messages';
+export const DEFAULT_PAGE_FIELDS = 'feed';
 const FIELD_RE = /^[a-z_]{1,64}$/;
 
 /** Contract 3.6: facebook-path accounts only. */
