@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CLI: `app set --app-id <id>` and `accounts add --app-id <id>` write `app.app_id`.
 - `INSTAGRAM_MCP_HTTP_HOST` environment override for the HTTP bind host (`allow_remote` rules still apply).
 
+### Fixed
+- Webhooks: DM (`messaging`) entries send `entry.time` in Unix milliseconds; it was read as seconds, giving far-future `received_at` values that broke inbox ordering and retention pruning. Values >= 10^12 are now read as milliseconds, and unusable values fall back to the clock at receipt (contract 5, U34).
+
 ### Documentation
 - SETUP: "Testing DMs in Development mode" (Instagram Tester role) and "Going Live"; webhook step notes Live plus Page subscription. README known limitations: DM sending not live-verified, real DM webhooks unconfirmed, Instagram Login path and token refresh not live-verified.
 

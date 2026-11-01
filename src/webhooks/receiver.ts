@@ -54,6 +54,13 @@ export interface StoredEvent {
   payload: unknown;
 }
 
+/** Entry time to ISO (contract section 5, U34): >= 1e12 is milliseconds (messaging entries), smaller is seconds (changes entries). Null when unusable. */
+function entryTimeIso(time: unknown): string | null {
+  if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) return null;
+  const date = new Date(time >= 1e12 ? time : time * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 /** Extract the events of a Meta webhook body (contract section 5). Pure apart from account lookup. */
 export function extractEvents(body: unknown, accountFor: (igId: string) => string | null, nowIso: string): { object: string | null; events: StoredEvent[] } {
   const events: StoredEvent[] = [];
@@ -65,7 +72,7 @@ export function extractEvents(body: unknown, accountFor: (igId: string) => strin
     const entry = raw as { id?: unknown; time?: unknown; changes?: unknown; messaging?: unknown };
     const igId = entry.id !== undefined && entry.id !== null ? String(entry.id) : null;
     const account = igId ? accountFor(igId) : null;
-    const receivedAt = typeof entry.time === 'number' && Number.isFinite(entry.time) ? new Date(entry.time * 1000).toISOString() : nowIso;
+    const receivedAt = entryTimeIso(entry.time) ?? nowIso;
     const push = (item: unknown, field: string, payload: unknown): void => {
       events.push({ event_key: createHash('sha256').update(canonicalJson(item)).digest('hex'), field, ig_id: igId, account, received_at: receivedAt, payload });
     };
