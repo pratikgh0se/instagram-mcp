@@ -1,10 +1,22 @@
 # instagram-mcp
 
-A self-hosted MCP server that lets an AI agent run an Instagram creator's content cycle (plan, publish, schedule, engage, measure, report) using only Meta's official Instagram Platform API.
+MCP server for Instagram creators: publish, schedule, triage comments and DMs, and read insights with an AI agent, using only Meta's official Instagram API. Self-hosted; every write needs your approval.
 
-![License: MIT](https://img.shields.io/badge/license-MIT-green.svg) ![Node >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
+[![License: MIT](https://img.shields.io/github/license/pratikgh0se/instagram-mcp)](LICENSE)
+[![CI](https://github.com/pratikgh0se/instagram-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pratikgh0se/instagram-mcp/actions)
+![Node >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
+
+<!-- TODO: demo GIF (docs/demo.gif): real capture of Claude publishing a post with the approval step. -->
 
 Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Not yet live-tested: the Instagram Login path, and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
+
+## Install
+
+```bash
+git clone https://github.com/pratikgh0se/instagram-mcp.git && cd instagram-mcp && npm ci && npm run build
+```
+
+Then follow [Quick start](#quick-start), or [docs/SETUP.md](docs/SETUP.md) if you don't have a Meta app yet.
 
 ## What it is
 
