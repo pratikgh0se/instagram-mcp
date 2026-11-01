@@ -429,7 +429,7 @@ Messages of one conversation (newest first, max 20) with participants and the 24
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
 | `account` | string | no | Account alias; defaults to the configured default account. minLength=1, maxLength=64 |
-| `conversation_id` | string | yes | conversation_id pattern="^[A-Za-z0-9_-]{1,64}$" |
+| `conversation_id` | string | yes | conversation_id pattern="^[A-Za-z0-9_-]{1,256}$" |
 | `limit` | integer | no | Default 20, max 20. minimum=1, maximum=20 |
 
 ## instagram_preflight_send_message
@@ -444,7 +444,7 @@ Plan a DM (text, media URL, or reaction; optional quick replies) to an IGSID or 
 |---|---|---|---|
 | `account` | string | no | Account alias; defaults to the configured default account. minLength=1, maxLength=64 |
 | `recipient_id` | string | no | Instagram-scoped user id (IGSID). Exactly one of recipient_id / conversation_id. minLength=1, maxLength=128 |
-| `conversation_id` | string | no | conversation_id pattern="^[A-Za-z0-9_-]{1,64}$" |
+| `conversation_id` | string | no | conversation_id pattern="^[A-Za-z0-9_-]{1,256}$" |
 | `text` | string | no | Message text, at most 1000 bytes UTF-8. |
 | `media` | object | no |  |
 | `reaction` | object | no |  |

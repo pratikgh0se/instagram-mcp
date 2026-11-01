@@ -6,7 +6,7 @@ import { requireCapability, withProbe } from '../../graph/capabilities.js';
 import type { GraphClient } from '../../graph/client.js';
 import { createApproval, type PlannedCall } from '../../safety/approvals.js';
 import { registerAction } from '../../safety/registry.js';
-import { DAY_MS, dmBase, gatePreflight, idParam, isRecord, ownId, str, tsMs, withTarget } from '../../engagement/common.js';
+import { DAY_MS, conversationIdParam, dmBase, gatePreflight, isRecord, ownId, str, tsMs, withTarget } from '../../engagement/common.js';
 import { assertRemoteMediaUrl } from '../../engagement/url.js';
 import { verifyRemoteMedia } from '../../publish/validate.js';
 import { accountParam, cursorParam } from '../shared.js';
@@ -73,7 +73,7 @@ const getConversation = defineTool({
   name: 'instagram_get_conversation',
   title: 'Get conversation',
   description: 'Messages of one conversation (newest first, max 20) with participants and the 24 h window state.',
-  inputSchema: { account: accountParam, conversation_id: idParam('conversation_id'), limit: z.number().int().min(1).max(20).optional().describe('Default 20, max 20.') },
+  inputSchema: { account: accountParam, conversation_id: conversationIdParam(), limit: z.number().int().min(1).max(20).optional().describe('Default 20, max 20.') },
   annotations: READ_ONLY,
   async handler(ctx, input) {
     const account = ctx.account(input.account);
@@ -156,7 +156,7 @@ async function recentMessages(ctx: AppContext, account: ResolvedAccount, graph: 
 const sendInput = {
   account: accountParam,
   recipient_id: z.string().min(1).max(128).optional().describe('Instagram-scoped user id (IGSID). Exactly one of recipient_id / conversation_id.'),
-  conversation_id: idParam('conversation_id').optional(),
+  conversation_id: conversationIdParam().optional(),
   text: z.string().optional().describe('Message text, at most 1000 bytes UTF-8.'),
   media: z.object({ url: z.string().min(1), type: z.enum(['image', 'video', 'audio']) }).strict().optional(),
   reaction: z.object({ message_id: z.string().min(1).max(512), action: z.enum(['react', 'unreact']), emoji: z.string().min(1).max(32).optional() }).strict().optional(),

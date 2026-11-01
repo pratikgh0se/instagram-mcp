@@ -6,6 +6,8 @@ Words: MUST/MUST NOT are binding. "Graph request" means an HTTP request the serv
 
 Amendment 2026-11-01 (first live E2E, facebook path): (a) `instagram_get_media`, `instagram_download_media`, `instagram_preflight_delete_media` and `instagram_preflight_set_comments_enabled` retry once without comment fields when Meta answers code 10 "Comments cannot be made on story media" (2.2); (b) error mapping rows 3a/3b (1.7); (c) `auth set-token` always resolves `username` (3); (d) `instagram_get_profile` returns `warnings` and notes that `account_type` is unavailable on the facebook path (2.1); (e) new observed facts U28 to U30 (7).
 
+Amendment 2026-11-01 (second live E2E, facebook path): `conversation_id` inputs accept 1 to 256 characters of `[A-Za-z0-9_-]` (1.5, U32); every other URL-path id keeps the 64-character limit. U29 is resolved: conversations appear in Development mode once the other participant has an app role (Instagram Tester).
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -117,7 +119,7 @@ All input validation failures, including schema violations (missing required fie
 
 Field naming: contract-defined fields are snake_case. Fields passed through from Meta keep Meta's names and values. Meta fields that were requested but absent from the Meta response are `null` in results (arrays that were requested and absent: `[]` where stated). Locally generated timestamps are `Date.toISOString()` UTC (`2026-10-29T12:00:00.000Z`). Meta-provided timestamps are passed through unmodified. Input timestamps accept ISO 8601 with `Z` or numeric offset, or a date-only `YYYY-MM-DD` (= 00:00:00Z); anything else is `INVALID_INPUT`. When converted to Meta's `since`/`until` they become integer Unix seconds.
 
-Ids that go into URL paths (`media_id`, `comment_id`, `conversation_id`, `creation_id`, `hashtag_id`) MUST match `^[A-Za-z0-9_-]{1,64}$`, else `INVALID_INPUT` (no request is made).
+Ids that go into URL paths (`media_id`, `comment_id`, `creation_id`, `hashtag_id`) MUST match `^[A-Za-z0-9_-]{1,64}$`; `conversation_id` MUST match `^[A-Za-z0-9_-]{1,256}$` (Meta conversation ids are about 130 characters, U32). A non-matching id gives `INVALID_INPUT` (no request is made).
 
 ### 1.6 Error codes
 
@@ -812,6 +814,7 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U29 | `GET /{page_id}/conversations?platform=instagram` in Development mode (02) | OBSERVED 2026-11-01, facebook path, Development mode: returned an empty list with no error although a real DM from a non-role Instagram account existed. Sending a private reply (`private_reply` op) to that account worked. Probable causes: a dev-mode restriction to app-role users, or the "Allow access to messages" toggle (phone-app only, absent on some accounts); not confirmed. `list_conversations` returns `items: []`; no error is raised. |
 | U30 | `account_type` on the facebook path (03) | OBSERVED 2026-11-01: not exposed on the IG User node via graph.facebook.com; `account_type` stays `null` and `instagram_get_profile` adds the `ACCOUNT_TYPE_UNAVAILABLE` warning. |
 | U31 | Comment fields on STORY media (02) | OBSERVED 2026-11-01: `GET /{story_id}` with `comments_count`/`is_comment_enabled` fails with code 10 "(#10) Comments cannot be made on story media."; handled by the single story-safe retry (2.2). Code 10 is also used for rule violations (row 3a/3b) so it is no longer always `MISSING_PERMISSION`. |
+| U32 | Conversation id length (02) | OBSERVED 2026-11-01: `GET /{page_id}/conversations?platform=instagram` returned an id of 132 characters from `[A-Za-z0-9_-]` (base64-style). The original 64-character limit rejected it; the `conversation_id` limit is 256. |
 
 ---
 

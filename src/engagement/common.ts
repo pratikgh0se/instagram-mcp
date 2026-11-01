@@ -12,6 +12,9 @@ export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 /** Ids that go into URL paths (contract 1.5). */
 export const idParam = (what: string) => z.string().regex(ID_RE, `${what} must match ^[A-Za-z0-9_-]{1,64}$`).describe(what);
 
+/** Meta Instagram conversation ids are ~130 chars (contract 1.5). */
+export const conversationIdParam = () => z.string().regex(/^[A-Za-z0-9_-]{1,256}$/, 'conversation_id must match ^[A-Za-z0-9_-]{1,256}$').describe('conversation_id');
+
 export const DAY_MS = 86_400_000;
 
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
