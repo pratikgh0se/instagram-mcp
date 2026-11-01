@@ -1,5 +1,5 @@
 import type { Config, LoginPath, ResolvedAccount, Clock } from '../config/index.js';
-import { AppError } from '../errors.js';
+import { AppError, isAppError } from '../errors.js';
 import { log } from '../log.js';
 import { registerSecret } from '../redact.js';
 import { GraphHttp, type GraphUsage } from '../graph/http.js';
@@ -293,9 +293,13 @@ export class TokenManager {
           registerSecret(token);
           exchanged = true;
         } catch (error) {
+          const code = isAppError(error) ? error.code : 'ERROR';
+          notes.push(`SHORT_LIVED: the long-lived exchange failed (${code}); the stored token expires in about 1 hour. Fix the cause and run auth set-token again.`);
           notes.push(`Long-lived user-token exchange failed (${(error as Error).message}); continuing with the token as given.`);
         }
       } else {
+        const why = opts.exchange === false ? 'the exchange was skipped (--no-exchange)' : [!appId ? 'app.app_id is not set' : '', !appSecret ? 'the app secret is not set' : ''].filter(Boolean).join(' and ');
+        notes.push(`SHORT_LIVED: the long-lived exchange was not done (${why}); the stored token expires in about 1 hour.${opts.exchange === false ? '' : ' Run app set --app-id <APP_ID> and/or auth set-app-secret, then auth set-token again.'}`);
         notes.push('app.app_id and the app secret are needed to exchange to a long-lived token; using the token as given.');
       }
       const page = await fb.request<{ access_token?: string; instagram_business_account?: { id: string } }>({

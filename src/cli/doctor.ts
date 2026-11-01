@@ -125,6 +125,22 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
   } else {
     out.push(check('page_subscription', 'pass', `The app is subscribed to the linked Page for ${subChecked} account(s).`));
   }
+
+  // Contract 3.3 app_credentials: facebook-path accounts need an app id and the app secret to exchange tokens.
+  const fbAccounts = accounts.filter((a) => a.login === 'facebook');
+  if (fbAccounts.length === 0) {
+    out.push(check('app_credentials', 'pass', 'Not applicable (no facebook-path account).'));
+  } else {
+    const missing: string[] = [];
+    const noAppId = !ctx.config.app.app_id;
+    if (noAppId) missing.push('app id (app.app_id)');
+    if (!appSecret) missing.push('app secret');
+    if (missing.length === 0) out.push(check('app_credentials', 'pass', `App id and app secret are present for ${fbAccounts.length} facebook-path account(s).`));
+    else {
+      const fixes = [...(noAppId ? ['instagram-mcp app set --app-id <APP_ID>'] : []), ...(!appSecret ? ['instagram-mcp auth set-app-secret'] : [])];
+      out.push(check('app_credentials', 'warn', `Missing ${missing.join(' and ')}. Without both, auth set-token cannot exchange the token and it expires in about 1 hour.`, `Run: ${fixes.join(' and ')}`));
+    }
+  }
   return out;
 }
 

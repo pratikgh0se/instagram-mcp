@@ -318,8 +318,18 @@ export async function webhooks(argv: string[]): Promise<number> {
         return 0;
       }
       const graph = ctx.graph(account);
-      if (values.unsubscribe) await graph.delete(`/${pageId}/subscribed_apps`);
-      else await graph.post(`/${pageId}/subscribed_apps`, { subscribed_fields: fields });
+      try {
+        if (values.unsubscribe) await graph.delete(`/${pageId}/subscribed_apps`);
+        else await graph.post(`/${pageId}/subscribed_apps`, { subscribed_fields: fields });
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'MISSING_PERMISSION') {
+          throw new AppError(error.code, error.message, {
+            action: `Regenerate the user token with the pages_manage_metadata permission, run: instagram-mcp auth set-token --account ${account.alias}, then restart the daemon.`,
+            retryable: error.retryable, details: error.details
+          });
+        }
+        throw error;
+      }
       const state = await getPageSubscription(ctx, account, pageId);
       json({ ...state, action: values.unsubscribe ? 'unsubscribed' : 'subscribed' });
       return 0;
