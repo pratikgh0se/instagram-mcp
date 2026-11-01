@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 - Docs: Unified Login live-verified 2026-11-01 (app Live, Standard Access): publishing, local files, scheduling, delete, comment writes, DMs to an Instagram Tester, messaging profile. Real webhook events do not reach a unified app (Test event only; contract U42).
+- Docs: Unified Login live-verified 2026-11-02: hiding/unhiding another account's comment, private reply to another account's comment, and finding and replying to a comment @mention. Real webhooks and hashtag search on Unified are waived for v1 pending Meta App Review (U42).
 - Setup guide recommends Unified Login for new apps; Meta no longer offers the dashboard Instagram-login token to apps. Instagram Login steps are kept under a legacy heading.
 
 ### Fixed
