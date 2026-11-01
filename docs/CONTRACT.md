@@ -16,6 +16,8 @@ Amendment 2026-11-01 (webhook event time, found in live E2E): `entry[i].time` in
 
 Amendment 2026-11-01 (capability cache, found in blind live failure-path run): Meta 100/subcode 33 on an object lookup no longer records a cached `no` (it was turning a mistyped conversation id into a permanent `CAPABILITY_UNAVAILABLE` for all DM tools); cached `no` entries are cleared by `auth set-token` and the new `capabilities reset` (3.7) and reported as a `doctor` warning (3.3); 1.5 names URL-rule and cursor violations as validation failures with `details.issues`.
 
+Amendment 2026-11-01 (delete verification, found in blind live run): `instagram_preflight_delete_media` approve verifies a failed `DELETE` with one `GET` and reports `succeeded` when the media is gone (2.x delete_media, U35).
+
 Table of contents: 1 Global conventions - 2 Tools (42) - 3 CLI - 4 HTTP transport - 5 Webhook receiver - 6 Media host - 7 Unverified upstream facts - 8 Decisions made in this contract.
 
 ---
@@ -502,7 +504,7 @@ Input: `job_id` (required), `confirm` (must be `true`, else `INVALID_INPUT`). Lo
 Action `delete_media`. Capability `delete_media` (instagram: probe). Input: `media_id`.
 Preflight requests: `GET /{media_id}?fields=id,caption,permalink,media_type,media_product_type,timestamp,like_count,comments_count`. `NOT_FOUND` if absent.
 `preview = { media_id, permalink, caption, media_type, media_product_type, timestamp, like_count, comments_count }`.
-Approve requests: `GET /{media_id}?fields=id,permalink` (stale check), `DELETE /{media_id}`. Result `{ media_id, deleted: true }`. On the instagram path a probe failure (1.12) yields `failed` `CAPABILITY_UNAVAILABLE` and caches `no`.
+Approve requests: `GET /{media_id}?fields=id,permalink` (stale check), `DELETE /{media_id}`. Result `{ media_id, deleted: true }`. On the instagram path a probe failure (1.12) yields `failed` `CAPABILITY_UNAVAILABLE` and caches `no`. Delete verification (U35): if the `DELETE` fails with any other mapped error except `AUTH_FAILED`, `TOKEN_EXPIRED` and `RATE_LIMITED`, the server makes exactly one more request, `GET /{media_id}?fields=id`. If that answers `NOT_FOUND`, the operation is `succeeded` with result `{ media_id, deleted: true, verified_after_error: { code, meta_code, meta_subcode } }` (the DELETE's mapped code and Meta code/subcode, `null` when absent). If it answers 2xx, the operation is `failed` with the DELETE's original error. If it fails any other way, the operation is `unknown` with `OUTCOME_UNKNOWN` (`details.reconcile = { operation_id, media_id }`; check with `instagram_get_media`).
 
 #### instagram_preflight_set_comments_enabled (A)
 Action `set_comments_enabled`. Input: `media_id`, `enabled` (boolean). Preflight: `GET /{media_id}?fields=id,permalink,is_comment_enabled,media_product_type`; warning `ALREADY_IN_STATE` if equal. `preview = { media_id, permalink, current_comment_enabled: boolean|null, requested: boolean }`. Approve: `GET /{media_id}?fields=id` (stale), `POST /{media_id}` body `comment_enabled=<true|false>`. Result `{ media_id, comment_enabled: boolean }`.
@@ -861,6 +863,7 @@ Token: 43 url-safe characters (`[A-Za-z0-9_-]`), cryptographically random, one p
 | U32 | Conversation id length (02) | OBSERVED 2026-11-01: `GET /{page_id}/conversations?platform=instagram` returned an id of 132 characters from `[A-Za-z0-9_-]` (base64-style). The original 64-character limit rejected it; the `conversation_id` limit is 256. |
 | U33 | Page subscription for Instagram webhooks (facebook path) (02) | OBSERVED 2026-11-01: with the app published, the Instagram webhook object verified and fields subscribed in the dashboard, real DMs from a tester produced no deliveries while dashboard Test events did; no code path subscribed the app to the Page. CONFIRMED 2026-11-01: before the subscription `GET /{page_id}/subscribed_apps` was empty and no real event arrived; after `POST ... subscribed_fields=feed` a real `comments` webhook arrived within 2 s. Subscribing `messages` needs `pages_messaging` (Meta code 200), which an Instagram-messaging app does not request, so the default is `feed`. Whether real DM (`messages`) webhooks also arrive with only `feed` is not yet confirmed. |
 | U34 | DM webhooks and `time` units (facebook path) (02) | CONFIRMED 2026-11-01: with the Page subscribed to `feed` only (no `pages_messaging`), 5 real DMs from an Instagram Tester arrived as `messaging` entries; their `entry.time` and `messaging[k].timestamp` are Unix milliseconds, while `changes` entries carry Unix seconds. |
+| U35 | Delete of a large carousel (facebook path) (02) | CONFIRMED 2026-11-01: `DELETE` of a 20-item carousel answered HTTP 400, Meta code -1, subcode 2207072, message "Fatal", yet the media was deleted (a following GET gave code 100/subcode 33). |
 
 ---
 
