@@ -754,6 +754,7 @@ Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail
 | `daemon` | lease held by a live daemon | no daemon | |
 | `webhooks` | enabled and verify token + app secret present | disabled or secret missing | |
 | `page_subscription` | every facebook-path account with a token has the configured app id in `GET /{page_id}/subscribed_apps`; or webhooks disabled / no such account (message says not applicable) | app not subscribed for some account (action: `instagram-mcp webhooks subscribe-page --account <alias>`), or the request failed (mapped code in message) | |
+| `app_credentials` | every facebook-path account has an app id (account or `app.app_id`) and the app secret is present; or no facebook-path account (message says not applicable) | app id or app secret missing (message names what is missing; action: `instagram-mcp app set --app-id <APP_ID>` and/or `instagram-mcp auth set-app-secret`; without both, `auth set-token` cannot exchange the token and it expires in about 1 hour) | |
 
 Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Skipped (not run) for accounts without a token. When `webhooks.enabled` is true, each facebook-path account with a token additionally gets `GET /{page_id}/subscribed_apps` (after its quota request).
 
@@ -762,7 +763,7 @@ Prints the package version (e.g. `1.0.0-rc.1`) and a newline to stdout, exit 0. 
 
 
 ### 3.5 `auth set-token` (amended 2026-11-01)
-Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire).
+Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias, login, expires_at, exchanged, ig_user_id, username, scopes, notes}`; never any token or secret. `username` is always resolved when possible: instagram path from `GET /me?fields=user_id,username`; facebook path from `GET /{ig_user_id}?fields=username` with the derived Page token, whether `ig_user_id` came from the config or from the Page's `instagram_business_account`. If that lookup fails the token is still stored, `username` is `null` and a note says so. On the facebook path with a long-lived user token, the observed output is `exchanged: true` and `expires_at: null` (a Page token derived from a long-lived user token does not expire). On the facebook path, when the long-lived exchange is not done (app id or app secret missing, or the exchange request fails), `exchanged` is `false` and `notes` contains a string starting `SHORT_LIVED:` that says the stored token expires in about 1 hour and names the missing piece or the mapped error code; the token is still stored, exit 0.
 
 ### 3.6 `webhooks page-subscription` and `webhooks subscribe-page` (added 2026-11-01)
 
@@ -770,7 +771,7 @@ Both take `--account <alias>` (default: `default_account`) and work only for fac
 
 `webhooks page-subscription`: `GET /{page_id}/subscribed_apps` with the account token. stdout: one JSON document `{alias, page_id, app_id, subscribed, subscribed_fields}` where `app_id` is the configured app id (or `null` when none is configured), `subscribed` is true iff an entry's `id` equals `app_id` (with `app_id` null: true iff any entry exists), and `subscribed_fields` is that entry's `subscribed_fields` (else `[]`). Exit 0.
 
-`webhooks subscribe-page`: optional `--fields <comma list>` (each item `^[a-z_]{1,64}$`, 1 to 20 items; default `feed`), optional `--unsubscribe`. Subscribe: `POST /{page_id}/subscribed_apps` with body `subscribed_fields=<list>`; unsubscribe: `DELETE /{page_id}/subscribed_apps`. Then the same GET as `page-subscription`. stdout: the `page-subscription` JSON plus `"action":"subscribed"|"unsubscribed"`. Exit 0. Meta errors are mapped (1.7), printed as above, exit 1 (no GET after a failed write).
+`webhooks subscribe-page`: optional `--fields <comma list>` (each item `^[a-z_]{1,64}$`, 1 to 20 items; default `feed`), optional `--unsubscribe`. Subscribe: `POST /{page_id}/subscribed_apps` with body `subscribed_fields=<list>`; unsubscribe: `DELETE /{page_id}/subscribed_apps`. Then the same GET as `page-subscription`. stdout: the `page-subscription` JSON plus `"action":"subscribed"|"unsubscribed"`. Exit 0. Meta errors are mapped (1.7), printed as above, exit 1 (no GET after a failed write). A `MISSING_PERMISSION` from the subscribe/unsubscribe write prints the action: regenerate the user token with `pages_manage_metadata`, run `auth set-token` again, then restart the daemon.
 
 ### 3.7 `capabilities reset` (added 2026-11-01)
 
