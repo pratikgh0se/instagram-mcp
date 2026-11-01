@@ -23,6 +23,8 @@ export interface GraphRequest {
   appSecret?: string;
   /** Override the default (GET only) retry behaviour. Writes must never be retried automatically. */
   retry?: boolean;
+  /** GET only: an error for which this returns true is thrown at once instead of being retried (used for the DM sender fallback, U41). */
+  noRetryIf?: (error: AppError) => boolean;
   timeoutMs?: number;
 }
 
@@ -113,7 +115,7 @@ export class GraphHttp {
         if (retryAfter !== undefined) {
           error.details = { ...(error.details ?? {}), retry_after_seconds: Math.ceil(retryAfter / 1000) };
         }
-        if (!canRetry || attempt === maxAttempts || !this.isRetryable(error)) throw error;
+        if (!canRetry || attempt === maxAttempts || !this.isRetryable(error) || req.noRetryIf?.(error)) throw error;
         // A Retry-After beyond 30 s is not worth waiting for: fail immediately.
         if (retryAfter !== undefined && retryAfter > MAX_RETRY_AFTER_MS) throw error;
         await this.sleep(Math.max(retryAfter ?? 0, backoffDelay(attempt)));

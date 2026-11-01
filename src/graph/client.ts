@@ -16,6 +16,12 @@ export function decodeGraphCursor(cursor: string): string {
   throw invalidCursor();
 }
 
+/** Per-request GET options. */
+export interface GetOptions {
+  /** Throw matching errors at once instead of retrying them. */
+  noRetryIf?: (error: AppError) => boolean;
+}
+
 export interface Page<T> {
   data: T[];
   next_cursor: string | null;
@@ -46,12 +52,12 @@ export class GraphClient {
     return { token, tokenPlacement: this.account.token_in_header ? 'header' : 'query' };
   }
 
-  async get<T = Record<string, unknown>>(path: string, query: Record<string, QueryValue> = {}): Promise<T> {
-    return (await this.getRaw<T>(path, query)).data;
+  async get<T = Record<string, unknown>>(path: string, query: Record<string, QueryValue> = {}, opts: GetOptions = {}): Promise<T> {
+    return (await this.getRaw<T>(path, query, opts)).data;
   }
 
-  async getRaw<T = Record<string, unknown>>(path: string, query: Record<string, QueryValue> = {}): Promise<GraphResponse<T>> {
-    return this.http.request<T>({ method: 'GET', path, query, ...(await this.withAuth()) });
+  async getRaw<T = Record<string, unknown>>(path: string, query: Record<string, QueryValue> = {}, opts: GetOptions = {}): Promise<GraphResponse<T>> {
+    return this.http.request<T>({ method: 'GET', path, query, ...(opts.noRetryIf ? { noRetryIf: opts.noRetryIf } : {}), ...(await this.withAuth()) });
   }
 
   /** POST with a form-encoded body (query carries only credentials). Never retried. Network/5xx failures are flagged `details.ambiguous`. */
@@ -68,12 +74,12 @@ export class GraphClient {
   async list<T = Record<string, unknown>>(
     path: string,
     query: Record<string, QueryValue> = {},
-    opts: { limit?: number; cursor?: string } = {}
+    opts: GetOptions & { limit?: number; cursor?: string } = {}
   ): Promise<Page<T>> {
     const q: Record<string, QueryValue> = { ...query };
     if (opts.limit) q.limit = opts.limit;
     if (opts.cursor) q.after = decodeGraphCursor(opts.cursor);
-    const res = await this.get<{ data?: T[]; paging?: { cursors?: { after?: string }; next?: string } }>(path, q);
+    const res = await this.get<{ data?: T[]; paging?: { cursors?: { after?: string }; next?: string } }>(path, q, opts.noRetryIf ? { noRetryIf: opts.noRetryIf } : {});
     return { data: res.data ?? [], next_cursor: res.paging?.next && res.paging.cursors?.after ? encodeGraphCursor(res.paging.cursors.after) : null };
   }
 }

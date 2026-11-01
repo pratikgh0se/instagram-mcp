@@ -409,7 +409,7 @@ Title: List conversations
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Recent DM conversations with participants, last message, last user message time and whether the 24 h messaging window is open.
+Recent DM conversations with participants, last message, last user message time and whether the 24 h messaging window is open. `senders` is api, webhooks (Meta withheld senders; time from stored webhook events) or unavailable.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -424,7 +424,7 @@ Title: Get conversation
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Messages of one conversation (newest first, max 20) with participants and the 24 h window state.
+Messages of one conversation (newest first, max 20) with participants and the 24 h window state. `senders` is api, webhooks or unavailable (Meta withheld sender fields).
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -438,7 +438,7 @@ Title: Preflight send message
 
 Annotations: readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=true
 
-Plan a DM (text, media URL, or reaction; optional quick replies) to an IGSID or conversation. Checks the 24 h messaging window from the last 20 messages (HUMAN_AGENT tag only if policy allows and within 7 days) and returns an approval_id for instagram_approve.
+Plan a DM (text, media URL, or reaction; optional quick replies) to an IGSID or conversation. Checks the 24 h messaging window from the last 20 messages, or from stored webhook events when Meta withholds senders (WINDOW_UNVERIFIED warning when neither is available) (HUMAN_AGENT tag only if policy allows and within 7 days) and returns an approval_id for instagram_approve.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|

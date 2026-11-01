@@ -104,19 +104,17 @@ export function storeEvents(ctx: AppContext, object: string | null, events: Stor
   return added;
 }
 
-function accountResolver(ctx: AppContext): (igId: string) => string | null {
+/** Account of an Instagram id: when several configured accounts hold it, the first (config order) whose app secret signed the request, else the first. */
+function accountResolver(ctx: AppContext, signers: ReadonlySet<string>): (igId: string) => string | null {
   return (igId) => {
-    for (const a of listAccounts(ctx.config)) {
-      const known = a.ig_user_id ?? ctx.storage.kv.get<string>(`ig_user_id:${a.alias}`) ?? null;
-      if (known === igId) return a.alias;
-    }
-    return null;
+    const holders = listAccounts(ctx.config)
+      .filter((a) => (a.ig_user_id ?? ctx.storage.kv.get<string>(`ig_user_id:${a.alias}`) ?? null) === igId)
+      .map((a) => a.alias);
+    return holders.find((alias) => signers.has(alias)) ?? holders[0] ?? null;
   };
 }
-
 /** Handler for the configured webhook path. Bearer and Host/Origin checks do not apply (verify token / HMAC instead). */
 export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const resolve = accountResolver(ctx);
   return async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET') {
@@ -142,9 +140,14 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
       }
       // Contract section 5: the signature may be valid under the global or any account's own app secret.
       const appSecrets: string[] = [];
-      for (const scope of [GLOBAL_SCOPE, ...listAccounts(ctx.config).map((a) => a.alias)]) {
-        const v = await ctx.secrets.get(scope, 'app_secret').catch(() => undefined);
-        if (v && !appSecrets.includes(v)) appSecrets.push(v);
+      const globalSecret = await ctx.secrets.get(GLOBAL_SCOPE, 'app_secret').catch(() => undefined);
+      if (globalSecret) appSecrets.push(globalSecret);
+      const effective = new Map<string, string>(); // alias -> own app secret, else the global one (1.16.6)
+      for (const a of listAccounts(ctx.config)) {
+        const own = await ctx.secrets.get(a.alias, 'app_secret').catch(() => undefined);
+        const v = own || globalSecret;
+        if (v) effective.set(a.alias, v);
+        if (own && !appSecrets.includes(own)) appSecrets.push(own);
       }
       if (appSecrets.length === 0) {
         req.resume();
@@ -166,7 +169,8 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
         return text(res, 400, 'Body is not JSON');
       }
       try {
-        const { object, events } = extractEvents(body, resolve, ctx.clock.nowIso());
+        const signers = new Set([...effective].filter(([, secret]) => verifySignature(raw, sig, secret)).map(([alias]) => alias));
+        const { object, events } = extractEvents(body, accountResolver(ctx, signers), ctx.clock.nowIso());
         storeEvents(ctx, object, events);
       } catch (error) {
         ctx.log.error(`webhook store failed: ${errorMessage(error)}`);
