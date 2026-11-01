@@ -93,7 +93,7 @@ instagram-mcp doctor
 
 The facebook path needs three things: the Page ID, the app ID and the app secret. A Graph API Explorer token lasts about 1 hour, so run `auth set-token` right after generating it; without the app secret the long-lived exchange fails and the token expires within the hour.
 
-Before this works you need a Professional Instagram account, a Meta app and a token. [docs/SETUP.md](docs/SETUP.md) walks through that from "no Meta developer account", step by step. `doctor` prints PASS, WARN or FAIL per check with a fix for each.
+Before this works you need a Professional Instagram account, a Meta app and a token. [docs/SETUP.md](docs/SETUP.md) walks through that from "no Meta developer account", step by step. `doctor` prints PASS, WARN or FAIL per check with a fix for each. If a feature wrongly reports `CAPABILITY_UNAVAILABLE` (a cached "no"), clear it with `instagram-mcp capabilities reset --account <alias>`.
 
 ## Connect an MCP client
 

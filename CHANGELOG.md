@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- `doctor` gains an `app_credentials` check (contract 3.3): WARN when a facebook-path account has no app id (`app.app_id`) or the app secret is missing, because `auth set-token` then cannot exchange the token.
+- `auth set-token` on the facebook path: when the long-lived exchange is not done, `exchanged` is `false` and `notes` has a `SHORT_LIVED:` entry (the stored token expires in about 1 hour); the token is still stored (contract 3.5).
+- CLI: `capabilities reset [--account <alias>] [--feature <name>]` clears cached `no` capability results (contract 3.7); `auth set-token` also clears them; `doctor` WARNs on a cached `no`.
 - CLI: `webhooks page-subscription` and `webhooks subscribe-page [--fields <list>] [--unsubscribe]` (contract 3.6) check and set the app's subscription to the linked Facebook Page (`/{page_id}/subscribed_apps`, facebook path only); the default field is `feed` (subscribing `messages` needs `pages_messaging`); `doctor` gains a `page_subscription` check when webhooks are enabled (contract 3.3, U33).
 - Orphaned operations (contract 1.13.9): the process executing an operation (approve or scheduler pass) stores a wall-clock `heartbeat_at` (new nullable `operations.heartbeat_at` column, additive migration 2). A `running` operation whose heartbeat is older than `INSTAGRAM_MCP_ORPHAN_AFTER_MS` is marked `unknown` with `OUTCOME_UNKNOWN` (approval `unknown`, linked scheduled job `unknown`, batch items kept or marked unknown) at `serve`/`daemon` startup and at the start of `instagram_get_operation`, `instagram_list_operations` and `instagram_approve`; publish operations reconcile through the stored `creation_id`. New env `INSTAGRAM_MCP_HEARTBEAT_MS` and `INSTAGRAM_MCP_ORPHAN_AFTER_MS`; an orphan age not greater than the heartbeat interval is a startup error.
 - Shutdown drain (contract 1.13.10): stdio `serve` (stdin end, SIGTERM, SIGINT), `serve --http` and `daemon` stop accepting new calls and wait for in-flight approves (and scheduler passes) up to `INSTAGRAM_MCP_DRAIN_MS` (default 300000); a second signal exits immediately. Shutdown with nothing in flight is unchanged.
@@ -15,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `INSTAGRAM_MCP_HTTP_HOST` environment override for the HTTP bind host (`allow_remote` rules still apply).
 
 ### Fixed
+- `instagram_preflight_delete_media`: Meta can answer a carousel `DELETE` with HTTP 400 / code -1 / subcode 2207072 "Fatal" although the media was deleted. A failed `DELETE` (except `CAPABILITY_UNAVAILABLE`, `AUTH_FAILED`, `TOKEN_EXPIRED`, `RATE_LIMITED`) is now verified with one `GET /{media_id}?fields=id`: not found gives `succeeded` with `verified_after_error`, media still there gives `failed`, anything else gives `unknown` (`OUTCOME_UNKNOWN`) (contract 2.x, U35).
+- A Meta "object does not exist" (code 100, subcode 33) on a lookup no longer caches a `no` capability (a mistyped conversation id turned every DM tool into `CAPABILITY_UNAVAILABLE`); URL-rule and cursor violations report `details.issues` (contract 1.5, 1.12).
+- `webhooks subscribe-page`: a `MISSING_PERMISSION` now says to regenerate the token with `pages_manage_metadata`, re-run `auth set-token` and restart the daemon (contract 3.6).
+- Docs: the daemon's 30-day webhook event retention is documented (contract 5).
 - Webhooks: DM (`messaging`) entries send `entry.time` in Unix milliseconds; it was read as seconds, giving far-future `received_at` values that broke inbox ordering and retention pruning. Values >= 10^12 are now read as milliseconds, and unusable values fall back to the clock at receipt (contract 5, U34).
 - `conversation_id` accepts Meta's ~130-character ids (limit 256).
 - `instagram_get_media` (and download, delete preview, comments toggle preview) now work on Stories: on Meta's "(#10) Comments cannot be made on story media." the call is retried once without comment fields, which come back `null`.

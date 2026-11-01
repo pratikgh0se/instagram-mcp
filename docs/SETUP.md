@@ -581,6 +581,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | `me/accounts` shows the Page but no `instagram_business_account` | Link not made or points at a different Page | Section C step 6 |
 | Meta code 190 right after generating a token | The Explorer token expired (about 1 hour) before `auth set-token` | Generate a fresh one and run `auth set-token` at once |
 | `auth set-token` note "Long-lived user-token exchange failed" | App id or app secret missing or wrong | `app set --app-id`, `auth set-app-secret`, then `auth set-token` again |
+| A tool reports `CAPABILITY_UNAVAILABLE` although the feature should work, or doctor WARNs `capabilities` | A cached "no" from an earlier failed probe | `capabilities reset --account <alias>` (add `--feature <name>` for one feature) |
 | Instagram Tester invite stays "pending" | Not accepted | Accept at https://www.instagram.com/accounts/manage_access/ in a desktop browser (section F) |
 | `webhooks subscribe-page` fails with a permission error | Token has no `pages_manage_metadata` | Section P step 8 |
 | Webhooks never arrive on the Facebook path | App not Live, or Page not subscribed | Sections O and P step 8; `webhooks page-subscription` |
