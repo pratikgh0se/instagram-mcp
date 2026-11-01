@@ -760,7 +760,7 @@ Reads the token from a hidden prompt or stdin. stdout: one JSON document `{alias
 
 ### 3.6 `webhooks page-subscription` and `webhooks subscribe-page` (added 2026-11-01)
 
-Both take `--account <alias>` (default: `default_account`) and work only for facebook-path accounts; an instagram-path account gives `CAPABILITY_UNAVAILABLE` (message: Instagram-login apps receive webhooks without a Page subscription) and exit 1. A missing token gives `AUTH_FAILED`, exit 1. Errors print one line `<CODE>: <message>` on stderr, nothing on stdout. Neither command ever prints a token.
+Both take `--account <alias>` (default: `default_account`) and work only for facebook-path accounts; an instagram-path account gives `CAPABILITY_UNAVAILABLE` (message: Instagram-login apps receive webhooks without a Page subscription) and exit 1. A missing token gives `AUTH_FAILED`, exit 1. Errors print one stderr line containing `<CODE>: <message>` (the CLI's usual `instagram-mcp: <CODE>: <message> (<action>)` form), nothing on stdout. Neither command ever prints a token.
 
 `webhooks page-subscription`: `GET /{page_id}/subscribed_apps` with the account token. stdout: one JSON document `{alias, page_id, app_id, subscribed, subscribed_fields}` where `app_id` is the configured app id (or `null` when none is configured), `subscribed` is true iff an entry's `id` equals `app_id` (with `app_id` null: true iff any entry exists), and `subscribed_fields` is that entry's `subscribed_fields` (else `[]`). Exit 0.
 
