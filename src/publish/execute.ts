@@ -90,7 +90,8 @@ export async function stageForPublish(rt: Runtime, p: PublishParams, ownerId: st
         cover = s.token;
       }
     }
-    if (tokens.length) await ensureMediaHost(ctx);
+    // Resumable uploads read their staged copy directly; only host-route media and a local cover need the host.
+    if (localMediaNeedsHost(account, p)) await ensureMediaHost(ctx);
     // Turn tokens into public URLs only after the host is up.
     const resolvedUrls = urls.map((u, i) => (u !== null && p.media[i]!.source === 'local' ? publicUrl(ctx, u) : u));
     const resolvedCover = cover && p.cover?.source === 'local' ? publicUrl(ctx, cover) : cover;
