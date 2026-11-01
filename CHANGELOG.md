@@ -39,10 +39,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Plain-http Graph endpoints send `Connection: close` (avoids ~500 ms keep-alive stalls that starved the container poll loop).
 
 ### Documentation
+- DM sending corrected (U36, 2026-11-01): it fails with `MESSAGING_WINDOW_CLOSED` in Development mode but works to an Instagram Tester once the app is Live at Standard Access; people with no role still need Advanced Access per Meta (untested). README, AGENTS, SETUP updated.
 - SETUP rewritten for a new user (2026-11-01): developer account registration, per-path app creation, Roles and Instagram Tester procedure, permission-per-feature table, access levels and App Review, Go Live steps, webhook prerequisites, Development-mode capability table, setup-phase troubleshooting and a contents list. The Instagram Login path is documented from Meta's pages and noted as not live-tested.
 - New `docs/legal/` privacy policy and data deletion templates, with free GitHub Pages hosting steps (needed to go Live).
-- README quick start now includes `auth set-app-secret` and the facebook app id; known limitations updated (DM read and webhooks confirmed live, DM send needs Advanced Access).
-- Media host docs: Cloudflare quick tunnel (no domain) and named tunnel. Examples: launchd plist uses the output of `command -v node`; Claude Desktop config uses the absolute node path. AGENTS.md: DM send limit and install notes.
+- README quick start now includes `auth set-app-secret` and the facebook app id; known limitations updated (DM read and webhooks confirmed live).
+- Media host docs: Cloudflare quick tunnel (no domain) and named tunnel. Examples: launchd plist uses the output of `command -v node`; Claude Desktop config uses the absolute node path. AGENTS.md: install notes.
 
 ### Changed
 - Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.

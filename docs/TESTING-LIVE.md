@@ -46,7 +46,7 @@ Two extra accounts help: a second personal Instagram account (called "B" below) 
 | 20 | Private reply | `instagram_preflight_comment_actions` (`private_reply`) | A comment from B less than 7 days old | `private_reply` | DM arrives at B, or Meta error (messaging, see U7, U18) | |
 | 21 | Mentions | `instagram_list_mentions`, `instagram_preflight_reply_mention` | B @mentions the test account in a comment or caption | List; reply | Mention listed; reply posted. Tag lookups may fail on some paths (U13) | |
 | 22 | DMs list and read | `instagram_list_conversations`, `instagram_get_conversation` | B sends a DM to the test account first (opens the 24-hour window) | List, read | Conversation with `window_open: true` (U7, U21) | |
-| 23 | DM send | `instagram_preflight_send_message`, approve | Window open | Text message to B | Delivered to B | |
+| 23 | DM send | `instagram_preflight_send_message`, approve | Window open | Text message to B | Delivered to B (app Live; fails in Development mode, U36) | |
 | 24 | DM window closed | same | Conversation older than 24 hours | Preflight | `MESSAGING_WINDOW_CLOSED` | |
 | 25 | Messaging profile | `instagram_preflight_set_messaging_profile`, approve | | Set 2 ice breakers, then clear | Visible in B's chat start, then removed | |
 | 26 | Account insights | `instagram_get_account_insights` | Account with some activity | `views`, `reach`, period `day` | Normalized metrics. A deprecated metric (`impressions`) is rejected locally with the replacement named | |

@@ -209,7 +209,7 @@ Instagram Login: the dashboard adds the `instagram_business_*` permissions by de
 | Comments, mentions | `instagram_business_manage_comments` | `instagram_manage_comments` | Yes |
 | Insights | `instagram_business_manage_insights` | `instagram_manage_insights` | Yes |
 | Read DMs | `instagram_business_manage_messages` | `instagram_manage_messages` | Only for people with a role (Instagram Tester); Facebook path confirmed 2026-11-01 |
-| Send DMs | same as above | same as above | No: fails with `MESSAGING_WINDOW_CLOSED` at Standard Access; needs Advanced Access |
+| Send DMs | same as above | same as above | Role holders: works once the app is Live, fails in Development mode (confirmed 2026-11-01, facebook path). People with no role: needs Advanced Access (Meta docs, untested) |
 | Private reply to a comment | same as above | same as above | Yes (Facebook path confirmed 2026-11-01) |
 | Delete media | `instagram_manage_contents` (unverified on this path) | `instagram_manage_contents` | Yes (Facebook path) |
 | Business discovery (competitors) | Not available | `pages_read_engagement` | Not tested |
@@ -520,7 +520,7 @@ Any other static host (Cloudflare Pages, Netlify, your own site) works the same 
 
 You should see: the app shown as **Live**.
 
-What changes: your role holders still work, and webhooks now deliver. What does not change: you still have Standard Access, so sending DMs to people without a role still fails (section Q). Serving other people's accounts needs App Review and Advanced Access.
+What changes: your role holders still work, webhooks now deliver, and sending DMs to role holders (for example an Instagram Tester) now works (confirmed 2026-11-01, facebook path). What does not change: you still have Standard Access, so sending DMs to people without a role still needs Advanced Access per Meta (untested, section Q). Serving other people's accounts needs App Review and Advanced Access.
 
 ## P. Optional: webhooks
 
@@ -556,7 +556,9 @@ All of the following were observed on the Facebook path on 2026-11-01 unless mar
 | Read DMs from someone with no role on the app | Empty list (their conversation is invisible) |
 | Read DMs from an Instagram Tester | Works |
 | Private reply to a comment | Works |
-| Send a DM, even to an Instagram Tester | Fails: Meta `(#10) This message is sent outside of allowed window` (subcode 2534022), mapped to `MESSAGING_WINDOW_CLOSED`. Apps with Standard Access can only message people with a role ([Meta](https://developers.facebook.com/docs/messenger-platform/instagram/features/send-message)), and the Instagram Tester role did not count. Sending DMs to the public needs Advanced Access for `instagram_manage_messages` (App Review). Known limitation; do not retry. |
+| Send a DM to an Instagram Tester, Development mode | Fails: Meta `(#10) This message is sent outside of allowed window` (subcode 2534022), mapped to `MESSAGING_WINDOW_CLOSED`, even inside the 24 h window. Do not retry; publish the app (Live) first |
+| Send a DM to an Instagram Tester, Live, Standard Access | Works inside the 24 h window (confirmed 2026-11-01, facebook path: list, read and send all passed) |
+| Send a DM to people with no role on the app | Needs Advanced Access for `instagram_manage_messages` (App Review) per [Meta](https://developers.facebook.com/docs/messenger-platform/instagram/features/send-message). Untested |
 | Real webhooks | Need Live plus Page subscription (sections O and P) |
 | Hashtag search | Not confirmed in Development mode |
 
@@ -602,7 +604,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 | Meta code 4, 17, 32, 613, 80002 (`RATE_LIMITED`) | Rate limit hit | Wait; `instagram_get_rate_limits` shows usage |
 | Meta code 9 / subcode 2207042 (`PUBLISH_QUOTA_EXHAUSTED`) | Daily publishing limit used | Wait for the window |
 | Meta code 9007 or 2207xxx (`UPSTREAM_REJECTED`) | Media rejected (format, size, aspect, not ready) | Read the Meta message; use JPEG for images, MP4 or MOV for video |
-| `MESSAGING_WINDOW_CLOSED` (code 10 / 2534022) | More than 24 hours since the user's last message, or (Standard Access) any send to someone outside the app's roles | Do not retry. Ask the person to message again; if it still fails the send needs Advanced Access (section Q) |
+| `MESSAGING_WINDOW_CLOSED` (code 10 / 2534022) | More than 24 hours since the user's last message, the app is still in Development mode, or (Standard Access) a send to someone outside the app's roles | Do not retry. Ask the person to message again; make sure the app is Live; if it still fails the recipient needs Advanced Access (section Q) |
 | `CAPABILITY_UNAVAILABLE` | Feature not available on this login path | Follow the `action` (it names the other path) |
 | `MEDIA_HOST_UNAVAILABLE` | `media_host.public_base_url` unset or port 8766 busy (a second instance with the same state dir, such as the daemon, is fine) | Section M |
 | `OUTCOME_UNKNOWN` | Publish response lost | Do not retry; call `instagram_get_operation` with the approval id |
@@ -619,7 +621,7 @@ Run `instagram-mcp doctor` first; it prints a `fix:` line for each failure. Tool
 ## Appendix: glossary
 
 - Standard Access: the default. The app can use permissions on accounts that have a role on it (accounts you own or manage). No App Review.
-- Advanced Access: needed to serve people or accounts with no role on your app (for example sending DMs to the public). Needs App Review and Business Verification.
+- Advanced Access: needed to serve people or accounts with no role on your app (for example sending DMs to people with no role). Needs App Review and Business Verification.
 - Development mode vs Live: Development mode shows the app only to role holders. Live is the published state; webhooks need it.
 - Page ID vs Instagram id: the Page ID identifies the Facebook Page (Facebook path, `--page-id`); the Instagram id (`ig_user_id`) identifies the Instagram account and is found for you.
 - Long-lived token: a token Meta accepts for weeks or months (60 days for Instagram Login). A Page token derived from a long-lived user token has `expires_at: null`.

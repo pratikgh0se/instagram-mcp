@@ -53,7 +53,7 @@ Recommend the user require confirmation on the `instagram_approve` tool only.
 - Safe trial: set `policy.dry_run` to true; `instagram_approve` then returns `planned_calls` and sends nothing.
 - Scheduling needs a running daemon (`node dist/cli.js daemon`) or `scheduler run-once` from cron. `instagram_list_scheduled` shows status; only `scheduled` jobs can be canceled.
 - Local file publishing needs `media_host.public_base_url` and a tunnel (SETUP.md section M).
-- `MESSAGING_WINDOW_CLOSED` when sending a DM under Standard Access (even to an Instagram Tester) is a known limit: do not retry; tell the user sending needs Advanced Access (App Review).
+- `MESSAGING_WINDOW_CLOSED` when sending a DM: do not retry. Either the 24 h window is closed, the app is still in Development mode (sends to Instagram Testers fail there; they work once the app is Live), or, per Meta, the recipient has no role on the app and the app has only Standard Access (needs Advanced Access, App Review). Tell the user which applies.
 - Errors are structured: `structuredContent.error` has `code`, `message`, `action`, `retryable`. Follow `action`.
 
 ## Where state lives
