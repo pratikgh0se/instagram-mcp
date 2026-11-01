@@ -127,7 +127,7 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
       media.push({ source: 'local', url: null, path, real_path: loc.real_path, type, size: info.size, sha256: info.sha256, content_type: info.content_type, ...base });
       pending.push({ index: i, type });
     } else {
-      await assertPublicUrl(m.url!);
+      await assertPublicUrl(m.url!, process.env, `media[${i}].url`);
       const type = m.type ?? typeFromExtension(new URL(m.url!).pathname);
       if (!type && !verify) throw invalid(`Cannot tell whether media[${i}] is an image or a video; pass type.`, [`media[${i}].type`]);
       if (type) {
@@ -146,7 +146,7 @@ export async function preparePublish(ctx: AppContext, account: ResolvedAccount, 
       const info = await inspectLocalFile(loc.real_path, { kind: 'cover', type: 'image' });
       cover = { source: 'local', url: null, path: loc.path, real_path: loc.real_path, size: info.size, sha256: info.sha256, content_type: info.content_type };
     } else {
-      await assertPublicUrl(input.cover.url!);
+      await assertPublicUrl(input.cover.url!, process.env, 'cover.url');
       cover = { source: 'url', url: input.cover.url!, path: null, real_path: null, size: null, sha256: null, content_type: null };
       coverRemote = input.cover.url;
     }

@@ -84,10 +84,19 @@ export async function runDoctorChecks(ctx: AppContext): Promise<DoctorCheck[]> {
   else if (bad.length) out.push(check('token_validity', 'fail', bad.join(' | '), 'Re-authenticate: instagram-mcp auth set-token --account <alias>'));
   else out.push(check('token_validity', 'pass', `/me succeeded for ${withToken.length} account(s).`));
 
-  out.push(check('capabilities', 'pass', accounts.map((a) => {
+  const cachedNo = accounts.flatMap((a) => ctx.storage.capabilityCache.list(a.alias).filter((r) => r.status === 'no').map((r) => ({ alias: a.alias, feature: r.feature })));
+  const matrixText = accounts.map((a) => {
     const m = resolveMatrix(ctx, a);
     return `${a.alias}: ${Object.entries(m).map(([k, v]) => `${k}=${v}`).join(' ')}`;
-  }).join(' | ') || 'No accounts.'));
+  }).join(' | ') || 'No accounts.';
+  if (cachedNo.length) {
+    const aliases = [...new Set(cachedNo.map((r) => r.alias))];
+    out.push(check('capabilities', 'warn',
+      `Cached "no" capability result(s): ${cachedNo.map((r) => `${r.alias}/${r.feature}`).join(', ')}. ${matrixText}`,
+      aliases.map((alias) => `instagram-mcp capabilities reset --account ${alias}`).join(' ; ')));
+  } else {
+    out.push(check('capabilities', 'pass', matrixText));
+  }
 
   if (withToken.length === 0) out.push(check('quota', 'warn', 'Skipped: no account has a token.'));
   else out.push(quotaFailures.length ? check('quota', 'warn', quotaFailures.join(' | ')) : check('quota', 'pass', 'content_publishing_limit succeeded.'));

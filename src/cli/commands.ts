@@ -15,6 +15,7 @@ import { checkTokenValidity, printDoctor, runDoctorChecks } from './doctor.js';
 import { envTokenName } from '../secrets/index.js';
 import { errorMessage } from '../redact.js';
 import { readSecret } from './secret-input.js';
+import { capabilityFeatures } from '../graph/capabilities.js';
 import { getPageSubscription, parseFields, requireFacebookPath, requireToken } from './page-subscription.js';
 
 const out = (line: string): void => void process.stdout.write(line + '\n');
@@ -73,6 +74,8 @@ export async function auth(argv: string[]): Promise<number> {
           exchange: !values['no-exchange'],
           scopes: values.scopes?.split(',').map((s) => s.trim()).filter(Boolean)
         });
+        // Contract 1.12/3.5: a fresh token may change what the account can do; drop cached capability results.
+        ctx.storage.capabilityCache.clear(account.alias);
         if (res.ig_user_id && !account.ig_user_id) {
           const config = loadConfig(ctx.paths);
           const entry = config.accounts.find((a) => a.alias === account.alias);
@@ -331,6 +334,33 @@ export async function webhooks(argv: string[]): Promise<number> {
     registerSecret(token);
     await ctx.secrets.set(GLOBAL_SCOPE, 'webhook_verify_token', token);
     out('Webhook verify token stored.');
+    return 0;
+  } finally {
+    ctx.close();
+  }
+}
+
+// ---------- capabilities ----------
+const CAPABILITIES_USAGE = 'Usage: instagram-mcp capabilities reset [--account <alias>] [--feature <name>]';
+
+/** `capabilities reset`: delete cached capability probe results (contract 3.7). No Graph request. */
+export async function capabilities(argv: string[]): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub !== 'reset') throw usage(CAPABILITIES_USAGE);
+  const { values } = parseArgs({ args: rest, options: { account: { type: 'string' }, feature: { type: 'string' } }, allowPositionals: false });
+  const ctx = createContext({ mode: 'cli' });
+  try {
+    const features = capabilityFeatures();
+    if (values.feature !== undefined && !features.includes(values.feature)) {
+      throw usage(`Unknown feature "${values.feature}". Features: ${features.join(', ')}.`);
+    }
+    const alias = values.account ?? ctx.config.default_account ?? undefined;
+    const known = listAccounts(ctx.config).find((a) => a.alias === alias);
+    if (!known) throw usage(alias ? `Account "${alias}" is not configured.` : 'No account given and no default_account is set; pass --account <alias>.');
+    const cached = new Set(ctx.storage.capabilityCache.list(known.alias).map((r) => r.feature));
+    const cleared = features.filter((f) => cached.has(f) && (values.feature === undefined || values.feature === f));
+    ctx.storage.capabilityCache.clear(known.alias, values.feature);
+    json({ alias: known.alias, cleared });
     return 0;
   } finally {
     ctx.close();

@@ -64,7 +64,11 @@ export function mapMetaError(status: number, error: MetaErrorBody | undefined, o
 export function looksUnsupported(error: unknown): boolean {
   if (!(error instanceof AppError)) return false;
   if (error.code === 'MISSING_PERMISSION') return true;
-  const code = (error.details?.meta as { code?: number } | undefined)?.code;
+  const meta = error.details?.meta as { code?: number; subcode?: number } | undefined;
+  const code = meta?.code;
+  // Subcode 33 = the object does not exist (contract 1.12): never a probe failure, whatever the message says.
+  if (code === 100 && meta?.subcode === 33) return false;
+  if (error.code === 'NOT_FOUND') return false;
   if (code === 3) return true;
   return code === 100 && /unsupported|not supported|does not support/i.test(error.message);
 }

@@ -8,6 +8,7 @@ import { plannedCalls } from '../../publish/plan.js';
 import { checkQuota, preparePublish, type PublishInput } from '../../publish/prepare.js';
 import { cancelJob, getJob, JOB_STATUSES, listJobs, type JobRow } from '../../publish/scheduler.js';
 import { assertPolicyAllows, createApproval, type ApprovalTicket } from '../../safety/index.js';
+import { invalidCursor } from '../../errors.js';
 import { accountParam, cursorParam, decodeCursor, encodeCursor, limitParam } from '../shared.js';
 import { defineTool, LOCAL_DESTRUCTIVE, ok, READ_ONLY, READ_ONLY_LOCAL, type ToolDef } from '../types.js';
 
@@ -156,7 +157,7 @@ const listScheduled = defineTool({
     const limit = input.limit ?? 25;
     const account = input.account ? ctx.account(input.account).alias : undefined;
     const after = decodeCursor<{ p: string; j: string }>(input.cursor);
-    if (input.cursor && (!after || typeof after.p !== 'string' || typeof after.j !== 'string')) throw new AppError('INVALID_INPUT', 'Invalid cursor.');
+    if (input.cursor && (!after || typeof after.p !== 'string' || typeof after.j !== 'string')) throw invalidCursor();
     const rows = listJobs(ctx, { status: input.status, account, after: after ? { publish_at: after.p, id: after.j } : undefined, limit: limit + 1 });
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];

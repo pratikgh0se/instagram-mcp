@@ -1,4 +1,4 @@
-import { AppError } from '../errors.js';
+import { AppError, invalidCursor } from '../errors.js';
 import type { ResolvedAccount } from '../config/index.js';
 import type { TokenManager } from '../auth/manager.js';
 import type { GraphHttp, GraphResponse, QueryValue } from './http.js';
@@ -13,7 +13,7 @@ export function decodeGraphCursor(cursor: string): string {
     const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { after?: unknown };
     if (typeof parsed.after === 'string' && parsed.after) return parsed.after;
   } catch { /* fall through */ }
-  throw new AppError('INVALID_INPUT', 'Invalid cursor.', { action: 'Pass the next_cursor value from the previous page unchanged.' });
+  throw invalidCursor();
 }
 
 export interface Page<T> {

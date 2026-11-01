@@ -44,3 +44,11 @@ export class AppError extends Error {
 export function isAppError(value: unknown): value is AppError {
   return value instanceof AppError;
 }
+
+/** INVALID_INPUT for a garbled or foreign `cursor` (contract 1.5: carries details.issues like a schema violation). */
+export function invalidCursor(): AppError {
+  return new AppError('INVALID_INPUT', 'Invalid cursor.', {
+    action: 'Pass the next_cursor value from the previous page unchanged.',
+    details: { issues: [{ path: 'cursor', message: 'invalid cursor' }] }
+  });
+}

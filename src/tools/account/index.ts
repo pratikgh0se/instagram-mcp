@@ -7,6 +7,7 @@ import { envTokenName } from '../../secrets/index.js';
 import { reconcileOperation, approveApproval } from '../../safety/approve.js';
 import { sweepOrphans } from '../../safety/orphans.js';
 import type { ApprovalRow, OperationRow } from '../../storage/index.js';
+import { invalidCursor } from '../../errors.js';
 import { accountParam, cursorParam, decodeCursor, encodeCursor, limitParam, parseTimestamp } from '../shared.js';
 import { defineTool, ok, READ_ONLY, READ_ONLY_LOCAL, REMOTE_DESTRUCTIVE, type ToolDef } from '../types.js';
 
@@ -215,7 +216,7 @@ const listOperations = defineTool({
     const account = input.account ? ctx.account(input.account).alias : undefined;
     const before = decodeCursor<{ c: string; o: string }>(input.cursor);
     if (input.cursor && (!before || typeof before.c !== 'string' || typeof before.o !== 'string')) {
-      throw new AppError('INVALID_INPUT', 'Invalid cursor.');
+      throw invalidCursor();
     }
     const rows = ctx.storage.operations.list({
       account, action: input.action, status: input.status,

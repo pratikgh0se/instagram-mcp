@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppError } from '../errors.js';
+import { AppError, invalidCursor } from '../errors.js';
 
 /** Optional account alias accepted by every tool. */
 export const accountParam = z.string().min(1).max(64).optional().describe('Account alias; defaults to the configured default account.');
@@ -16,7 +16,7 @@ export function decodeCursor<T = unknown>(cursor: string | undefined): T | undef
   try {
     return JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as T;
   } catch {
-    throw new AppError('INVALID_INPUT', 'Invalid cursor.', { action: 'Pass the next_cursor value from the previous page unchanged.' });
+    throw invalidCursor();
   }
 }
 

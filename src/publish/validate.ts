@@ -200,24 +200,25 @@ const isTestLoopback = (url: URL, env: NodeJS.ProcessEnv): boolean => {
  * Contract 1.11 remote URL SYNTAX rules (https only; no credentials; IP literals in any form checked directly; no localhost-style
  * names; test mode allows loopback http). No DNS lookup and no request is made here. Throws INVALID_INPUT.
  */
-export async function assertPublicUrl(raw: string, env: NodeJS.ProcessEnv = process.env): Promise<URL> {
+export async function assertPublicUrl(raw: string, env: NodeJS.ProcessEnv = process.env, fieldPath = 'url'): Promise<URL> {
+  const bad = (message: string): AppError => new AppError('INVALID_INPUT', message, { details: { issues: [{ path: fieldPath, message }] } });
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw invalid(`"${raw}" is not a valid URL.`);
+    throw bad(`"${raw}" is not a valid URL.`);
   }
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (isTestLoopback(url, env)) return url;
-  if (url.protocol !== 'https:') throw invalid('Media URLs must use https://.');
-  if (url.username || url.password) throw invalid('Media URLs must not contain credentials.');
-  if (!host) throw invalid('Media URL has no host.');
+  if (url.protocol !== 'https:') throw bad('Media URLs must use https://.');
+  if (url.username || url.password) throw bad('Media URLs must not contain credentials.');
+  if (!host) throw bad('Media URL has no host.');
   if (isIpLiteral(host)) {
-    if (isBlockedAddress(host)) throw invalid('Media URL points at a loopback, private, link-local or otherwise non-public address.');
+    if (isBlockedAddress(host)) throw bad('Media URL points at a loopback, private, link-local or otherwise non-public address.');
     return url;
   }
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
-    throw invalid('Media URL points at a loopback or non-public host name.');
+    throw bad('Media URL points at a loopback or non-public host name.');
   }
   return url;
 }
