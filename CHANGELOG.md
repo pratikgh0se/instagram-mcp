@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- `instagram_get_operation` `finished_at` is `null` while an operation is `pending` or `running` and comes only from the operation when one exists (a running scheduler operation no longer shows the scheduling approval's finish time); an orphaned scheduler publish carries the container id its job recorded in `details.reconcile.creation_id` so it reconciles (contract 1.13.9, 2.1).
+
 ## [1.0.0] - 2026-11-01
 
 ### Added

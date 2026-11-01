@@ -148,7 +148,7 @@ function operationView(ctx: AppContext, approval: ApprovalRow | undefined, op: O
     origin: op ? op.origin : null,
     status,
     created_at: base.created_at,
-    finished_at: (op?.finished_at ?? approval?.finished_at) ?? null
+    finished_at: status === 'pending' || status === 'running' ? null : op ? op.finished_at : (approval?.finished_at ?? null)
   };
   if (approval?.preview !== undefined && approval.preview !== null) out.preview = approval.preview;
   const o = (outcome ?? {}) as Record<string, unknown>;

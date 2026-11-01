@@ -40,9 +40,20 @@ function schedulerOpIsDead(ctx: AppContext, op: OperationRow): boolean {
   return Boolean(job.claim_owner) && typeof job.claim_expires === 'string' && job.claim_expires <= new Date().toISOString();
 }
 
-function buildOutcome(op: OperationRow, approvalParams: unknown): { outcome: Record<string, unknown>; error: ReturnType<AppError['toJSON']> } {
+/** Container id (single media, or the carousel parent) a scheduler job recorded before its operation was orphaned. */
+function jobCreationId(ctx: AppContext, operationId: string): string | undefined {
+  const r = ctx.storage.db
+    .prepare(`SELECT creation_id, json_extract(coalesce(creation_ids_json,'{}'), '$.parent') AS parent FROM scheduled_posts WHERE operation_id=?`)
+    .get(operationId) as { creation_id?: string | null; parent?: string | null } | undefined;
+  const id = r?.parent || r?.creation_id;
+  return typeof id === 'string' && id ? id : undefined;
+}
+
+function buildOutcome(ctx: AppContext, op: OperationRow, approvalParams: unknown): { outcome: Record<string, unknown>; error: ReturnType<AppError['toJSON']> } {
   const stored = op.reconcile ?? {};
-  const creationId = typeof stored.creation_id === 'string' ? stored.creation_id : undefined;
+  const creationId = typeof stored.creation_id === 'string'
+    ? stored.creation_id
+    : op.origin === 'scheduler' && op.action === 'publish' ? jobCreationId(ctx, op.operation_id) : undefined;
   const reconcile: Record<string, unknown> = { ...stored, operation_id: op.operation_id, ...(creationId ? { creation_id: creationId } : {}) };
   let action = `Call instagram_get_operation with id ${op.operation_id} to check what happened before retrying.`;
   if (op.action === 'publish' && !creationId) action += ' No container id was recorded: also check instagram_list_media for the post before publishing again.';
@@ -80,7 +91,7 @@ export function sweepOrphans(ctx: AppContext, onlyApprovalId?: string): number {
     if (Number.isFinite(last) && last > cutoff) continue;
     if (op.origin === 'scheduler' && !schedulerOpIsDead(ctx, op)) continue;
     const approval = op.approval_id ? store.approvals.get(op.approval_id) : undefined;
-    const { outcome, error } = buildOutcome(op, approval?.params);
+    const { outcome, error } = buildOutcome(ctx, op, approval?.params);
     const now = ctx.clock.nowIso();
     const moved = store.tx(() => {
       if (!store.operations.markOrphaned(op.operation_id, op.heartbeat_at, outcome, 'OUTCOME_UNKNOWN', now)) return false;
