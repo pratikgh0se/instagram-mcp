@@ -759,7 +759,7 @@ Flag `--json` prints `{"ok":boolean,"checks":[{"id","status":"pass"|"warn"|"fail
 Requests made by `doctor`: per account (config order) `/me` then `GET /{IG}/content_publishing_limit?fields=quota_usage,config`. Skipped (not run) for accounts without a token. When `webhooks.enabled` is true, each facebook-path account with a token additionally gets `GET /{page_id}/subscribed_apps` (after its quota request).
 
 ### 3.4 `version`
-Prints the package version (e.g. `1.0.0-rc.1`) and a newline to stdout, exit 0. `--version` is an alias.
+Prints the package version (e.g. `1.0.0`) and a newline to stdout, exit 0. `--version` is an alias.
 
 
 ### 3.5 `auth set-token` (amended 2026-11-01)

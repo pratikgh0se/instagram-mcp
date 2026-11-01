@@ -1,6 +1,6 @@
 {
   "name": "instagram-mcp",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "description": "Self-hosted MCP server that lets an AI agent run an Instagram creator content cycle using only Meta's official Instagram Platform API",
   "keywords": [
     "mcp",

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-01
+
 ### Added
 - `doctor` gains an `app_credentials` check (contract 3.3): WARN when a facebook-path account has no app id (`app.app_id`) or the app secret is missing, because `auth set-token` then cannot exchange the token.
 - `auth set-token` on the facebook path: when the long-lived exchange is not done, `exchanged` is `false` and `notes` has a `SHORT_LIVED:` entry (the stored token expires in about 1 hour); the token is still stored (contract 3.5).

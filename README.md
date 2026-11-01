@@ -4,7 +4,7 @@ A self-hosted MCP server that lets an AI agent run an Instagram creator's conten
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg) ![Node >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 
-Status: `1.0.0-rc.1`. The unit-level behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md). The release candidate becomes 1.0.0 once the live run in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md) passes on a real account. Some Meta behaviours are not documented well enough to be certain; those are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md) and the server tolerates either answer.
+Status: `1.0.0`. Behaviour is specified in [docs/CONTRACT.md](docs/CONTRACT.md) and covered by a separate, code-blind test suite. It has been run end to end against real Meta on a test account (Facebook Login path, 2026-11-01): publishing, scheduling, comments, DMs, insights, webhooks and cleanup. Not yet live-tested: the Instagram Login path, and actions that need another account's comment or @mention (hiding it, private replies, mention replies). Meta behaviours that are not well documented are listed in [docs/TESTING-LIVE.md](docs/TESTING-LIVE.md), and the server tolerates either answer.
 
 ## What it is
 

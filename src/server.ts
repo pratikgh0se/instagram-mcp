@@ -13,7 +13,7 @@ import { createProgressReporter, withProgress } from './safety/progress.js';
 export const SERVER_NAME = 'instagram-mcp';
 
 export function packageVersion(): string {
-  return '1.0.0-rc.1';
+  return '1.0.0';
 }
 
 const oneLine = (text: string, max = 300): string => {
