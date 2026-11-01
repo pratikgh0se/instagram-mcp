@@ -211,5 +211,31 @@ CREATE TABLE locks (
     // Orphan detection (contract 1.13.9): wall-clock heartbeat of the process executing a `running` operation.
     version: 2,
     sql: `ALTER TABLE operations ADD COLUMN heartbeat_at TEXT;`
+  },
+  {
+    // Webhook deduplication per account (contract 5): unique per (event_key, account), an unknown account counting as ''.
+    // SQLite cannot drop a column constraint, so rows are copied into a rebuilt table first (ids preserved).
+    version: 3,
+    sql: `
+CREATE TABLE webhook_events_new (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_key    TEXT NOT NULL,
+  received_at  TEXT NOT NULL,
+  object       TEXT,
+  field        TEXT,
+  ig_id        TEXT,
+  account      TEXT,
+  payload_json TEXT NOT NULL,
+  processed_at TEXT,
+  data         TEXT
+);
+INSERT INTO webhook_events_new (id, event_key, received_at, object, field, ig_id, account, payload_json, processed_at, data)
+  SELECT id, event_key, received_at, object, field, ig_id, account, payload_json, processed_at, data FROM webhook_events;
+DROP TABLE webhook_events;
+ALTER TABLE webhook_events_new RENAME TO webhook_events;
+CREATE UNIQUE INDEX idx_webhook_event_account ON webhook_events(event_key, COALESCE(account, ''));
+CREATE INDEX idx_webhook_received ON webhook_events(received_at);
+CREATE INDEX idx_webhook_field ON webhook_events(account, field, received_at);
+`
   }
 ];
