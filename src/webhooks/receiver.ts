@@ -161,7 +161,11 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
         if (error instanceof BodyTooLarge) return respondTooLarge(req, res, 'Payload too large', 'text/plain');
         throw error;
       }
-      if (!appSecrets.some((s) => verifySignature(raw, sig, s))) return text(res, 401, 'Invalid signature');
+      if (!appSecrets.some((s) => verifySignature(raw, sig, s))) {
+        // A steady stream of these usually means a wrong app secret for the app that sends them.
+        ctx.log.warn('webhook rejected: signature does not match any configured app secret');
+        return text(res, 401, 'Invalid signature');
+      }
       let body: unknown;
       try {
         body = JSON.parse(raw.toString('utf8'));
@@ -171,7 +175,8 @@ export function createWebhookHandler(ctx: AppContext): (req: IncomingMessage, re
       try {
         const signers = new Set([...effective].filter(([, secret]) => verifySignature(raw, sig, secret)).map(([alias]) => alias));
         const { object, events } = extractEvents(body, accountResolver(ctx, signers), ctx.clock.nowIso());
-        storeEvents(ctx, object, events);
+        const added = storeEvents(ctx, object, events);
+        ctx.log.debug(`webhook accepted: signed for ${[...signers].join(',') || 'none'}, ${events.length} event(s), ${added} new`);
       } catch (error) {
         ctx.log.error(`webhook store failed: ${errorMessage(error)}`);
         return text(res, 500, 'Storage error');
