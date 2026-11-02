@@ -4,25 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-- Unified login mode (`--login unified`): Meta's "API setup with Unified login", a non-expiring system-user token on graph.facebook.com with no Page. Per-account app secrets (`auth set-app-secret --account`, `INSTAGRAM_MCP_APP_SECRET_<ALIAS>`).
-
-- DM sender fallback (contract U41): when Meta withholds message senders, conversation results carry `senders: "webhooks"` or `"unavailable"` and the 24 h window comes from stored webhook events; DM preflight warns `WINDOW_UNVERIFIED` when it cannot be confirmed.
-- Webhook attribution by signing secret and per-account deduplication when one Instagram account is configured under two aliases or apps (database migration 3).
-- Rejected webhook signatures are logged at warn level.
-
-### Changed
-- Docs: Unified Login live-verified 2026-11-01 (app Live, Standard Access): publishing, local files, scheduling, delete, comment writes, DMs to an Instagram Tester, messaging profile. Real webhook events do not reach a unified app (Test event only; contract U42).
-- Docs: Unified Login live-verified 2026-11-02: hiding/unhiding another account's comment, private reply to another account's comment, and finding and replying to a comment @mention. Real webhooks and hashtag search on Unified are waived for v1 pending Meta App Review (U42).
-- Setup guide recommends Unified Login for new apps; Meta no longer offers the dashboard Instagram-login token to apps. Instagram Login steps are kept under a legacy heading.
-
-### Fixed
-- Resumable local video publishing no longer starts the media host.
-- `instagram_get_operation` `finished_at` is `null` while an operation is `pending` or `running` and comes only from the operation when one exists (a running scheduler operation no longer shows the scheduling approval's finish time); an orphaned scheduler publish carries the container id its job recorded in `details.reconcile.creation_id` so it reconciles (contract 1.13.9, 2.1).
-
-## [1.0.0] - 2026-11-01
+## [1.0.0] - 2026-11-02
 
 ### Added
 - `doctor` gains an `app_credentials` check (contract 3.3): WARN when a facebook-path account has no app id (`app.app_id`) or the app secret is missing, because `auth set-token` then cannot exchange the token.
@@ -34,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Progress notifications (contract 1.13.11): `instagram_approve` sends `notifications/progress` (strictly increasing `progress`, `total` when known, short labels, at least every 10 s) when the request carries `_meta.progressToken`. README notes how to configure clients with request timeouts.
 - CLI: `app set --app-id <id>` and `accounts add --app-id <id>` write `app.app_id`.
 - `INSTAGRAM_MCP_HTTP_HOST` environment override for the HTTP bind host (`allow_remote` rules still apply).
+- Unified login mode (`--login unified`): Meta's "API setup with Unified login", a non-expiring system-user token on graph.facebook.com with no Page. Per-account app secrets (`auth set-app-secret --account`, `INSTAGRAM_MCP_APP_SECRET_<ALIAS>`).
+- DM sender fallback (contract U41): when Meta withholds message senders, conversation results carry `senders: "webhooks"` or `"unavailable"` and the 24 h window comes from stored webhook events; DM preflight warns `WINDOW_UNVERIFIED` when it cannot be confirmed.
+- Webhook attribution by signing secret and per-account deduplication when one Instagram account is configured under two aliases or apps (database migration 3).
+- Rejected webhook signatures are logged at warn level.
 
 ### Fixed
 - `instagram_preflight_delete_media`: Meta can answer a carousel `DELETE` with HTTP 400 / code -1 / subcode 2207072 "Fatal" although the media was deleted. A failed `DELETE` (except `CAPABILITY_UNAVAILABLE`, `AUTH_FAILED`, `TOKEN_EXPIRED`, `RATE_LIMITED`) is now verified with one `GET /{media_id}?fields=id`: not found gives `succeeded` with `verified_after_error`, media still there gives `failed`, anything else gives `unknown` (`OUTCOME_UNKNOWN`) (contract 2.x, U35).
@@ -55,6 +41,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `doctor` checks each account's `/me` and quota request before moving on to the next account.
 - HTTP `Origin` must exactly equal an `allowed_origins` entry.
 - Plain-http Graph endpoints send `Connection: close` (avoids ~500 ms keep-alive stalls that starved the container poll loop).
+- Resumable local video publishing no longer starts the media host.
+- `instagram_get_operation` `finished_at` is `null` while an operation is `pending` or `running` and comes only from the operation when one exists (a running scheduler operation no longer shows the scheduling approval's finish time); an orphaned scheduler publish carries the container id its job recorded in `details.reconcile.creation_id` so it reconciles (contract 1.13.9, 2.1).
 
 ### Documentation
 - DM sending corrected (U36, 2026-11-01): it fails with `MESSAGING_WINDOW_CLOSED` in Development mode but works to an Instagram Tester once the app is Live at Standard Access; people with no role still need Advanced Access per Meta (untested). README, AGENTS, SETUP updated.
@@ -66,6 +54,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - Instagram-path `auth set-token`: a failed short-to-long exchange (dashboard tokens are already long-lived) now stores the token as-is with a one-line note.
 - Media host: if the port is already served by another instance sharing the same `INSTAGRAM_MCP_HOME` (identified by a marker header derived from the staging path), that instance is used instead of failing with `MEDIA_HOST_UNAVAILABLE`.
+- Docs: Unified Login live-verified 2026-11-01 (app Live, Standard Access): publishing, local files, scheduling, delete, comment writes, DMs to an Instagram Tester, messaging profile. Real webhook events do not reach a unified app (Test event only; contract U42).
+- Docs: Unified Login live-verified 2026-11-02: hiding/unhiding another account's comment, private reply to another account's comment, and finding and replying to a comment @mention. Real webhooks and hashtag search on Unified are waived for v1 pending Meta App Review (U42).
+- Setup guide recommends Unified Login for new apps; Meta no longer offers the dashboard Instagram-login token to apps. Instagram Login steps are kept under a legacy heading.
 
 ## [1.0.0-rc.1] - 2026-10-29
 
