@@ -41,7 +41,8 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "smoke": "npm run build && node scripts/smoke.mjs",
     "start": "node dist/cli.js serve",
-    "docs:tools": "node scripts/gen-tools-doc.mjs"
+    "docs:tools": "node scripts/gen-tools-doc.mjs",
+    "build:mcpb": "node scripts/build-mcpb.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

@@ -7,3 +7,5 @@ dist/
 coverage/
 .worktrees/
 worktrees/
+dist-mcpb/
+.mcpb-build/

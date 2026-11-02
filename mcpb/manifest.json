@@ -1,0 +1,41 @@
+{
+  "manifest_version": "0.3",
+  "name": "instagram-mcp",
+  "display_name": "Instagram MCP",
+  "version": "1.0.0",
+  "description": "MCP server for Instagram creators: publish, schedule, triage comments and DMs, and read insights with an AI agent, using only Meta's official Instagram API. Self-hosted; every write needs your approval.",
+  "author": {
+    "name": "Pratik Ghose",
+    "url": "https://github.com/pratikgh0se"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pratikgh0se/instagram-mcp"
+  },
+  "homepage": "https://github.com/pratikgh0se/instagram-mcp",
+  "license": "MIT",
+  "keywords": ["instagram", "mcp", "meta", "social-media", "creators"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/cli.js", "serve"],
+      "env": {
+        "INSTAGRAM_MCP_HOME": "${user_config.state_dir}"
+      }
+    }
+  },
+  "user_config": {
+    "state_dir": {
+      "type": "directory",
+      "title": "State directory",
+      "description": "Where instagram-mcp keeps config and state. Leave empty for ~/.instagram-mcp. Run the CLI setup (README Quick start) first.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": { "node": ">=22.13.0" }
+  }
+}
